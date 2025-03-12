@@ -23,8 +23,19 @@ const Auth = () => {
       });
 
       if (error) throw error;
-      if (data.user) {
+      
+      // Check if user has a company set up
+      const { data: companies, error: companiesError } = await supabase
+        .from('companies')
+        .select('id')
+        .eq('owner_id', data.user?.id);
+
+      if (companiesError) throw companiesError;
+
+      if (companies && companies.length > 0) {
         navigate('/app/dashboard');
+      } else {
+        navigate('/setup');
       }
     } catch (err: any) {
       setError(err.message);
@@ -46,7 +57,7 @@ const Auth = () => {
 
       if (error) throw error;
       if (data.user) {
-        navigate('/app/dashboard');
+        navigate('/setup');
       }
     } catch (err: any) {
       setError(err.message);
