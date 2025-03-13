@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Calendar, CreditCard } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { loadStripe } from '@stripe/stripe-js';
 
 interface LocationState {
   currentTier: string;
@@ -9,6 +10,8 @@ interface LocationState {
   price: string;
   isUpgrade: boolean;
 }
+
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
 
 const SubscriptionForm = () => {
   const navigate = useNavigate();
@@ -51,26 +54,38 @@ const SubscriptionForm = () => {
       if (companyError) throw companyError;
       if (!company) throw new Error('No company found');
 
-      // Update company subscription
-      const { error: updateError } = await supabase
-        .from('companies')
-        .update({
-          subscription_tier: newTier,
-          subscription_start_date: new Date().toISOString(),
-          subscription_end_date: nextBillingDate.toISOString(),
-          is_trial: false,
+      // Create Stripe Checkout Session
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-checkout-session`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify({
+          priceId: `price_${newTier}`, // This should match your Stripe price IDs
+          customerId: company.stripe_customer_id,
+          companyId: company.id,
+          returnUrl: `${window.location.origin}/app/settings`
         })
-        .eq('id', company.id);
-
-      if (updateError) throw updateError;
-
-      // Redirect to settings page with success message
-      navigate('/app/settings', { 
-        state: { 
-          message: `Successfully ${isUpgrade ? 'upgraded' : 'downgraded'} to ${newTier} plan`,
-          type: 'success'
-        }
       });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create checkout session');
+      }
+
+      const { sessionId } = await response.json();
+
+      // Redirect to Stripe Checkout
+      const stripe = await stripePromise;
+      if (!stripe) throw new Error('Stripe failed to load');
+
+      const { error: stripeError } = await stripe.redirectToCheckout({
+        sessionId
+      });
+
+      if (stripeError) throw stripeError;
+
     } catch (err: any) {
       console.error('Error:', err);
       setError(err.message);
