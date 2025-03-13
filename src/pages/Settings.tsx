@@ -6,6 +6,7 @@ import {
   Shield, 
   Key, 
   Settings as SettingsIcon,
+  Users
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import CompanyManagement from '../components/CompanyManagement';
@@ -15,14 +16,15 @@ import { Permission, ROLES, TabDefinition } from '../types/settings';
 import { useAuth } from '../hooks/useAuth';
 import { DEMO_PERMISSIONS } from '../data/demoData';
 import Profile from './Profile';
+import UserManagement from './UserManagement';
 
 const TABS: TabDefinition[] = [
   { id: 'company', name: 'Company', icon: Building2 },
   { id: 'profile', name: 'Profile', icon: User },
-  { id: 'settings', name: 'Settings', icon: SettingsIcon },
+  { id: 'users', name: 'Users', icon: Users },
   { id: 'security', name: 'Security', icon: Shield },
   { id: 'notifications', name: 'Notifications', icon: Bell },
-  { id: 'api', name: 'API Keys', icon: Key },
+  { id: 'api', name: 'API Keys', icon: Key }
 ];
 
 const Settings = () => {
@@ -181,6 +183,8 @@ const Settings = () => {
         return <CompanyManagement />;
       case 'profile':
         return <Profile />;
+      case 'users':
+        return <UserManagement />;
       case 'security':
         return (
           <SecurityMatrix
