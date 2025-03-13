@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Building2, Truck, Users, Mail, Phone } from 'lucide-react';
+import { Building2 } from 'lucide-react';
 
 const US_STATES = [
   { code: 'AL', name: 'Alabama' },
@@ -73,6 +73,29 @@ const CompanySetup = () => {
     zipCode: ''
   });
 
+  // Check authentication status on mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error || !session) {
+        navigate('/auth');
+      }
+    };
+
+    checkAuth();
+  }, [navigate]);
+
+  // Subscribe to auth changes
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || !session) {
+        navigate('/auth');
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({
       ...formData,
@@ -86,6 +109,11 @@ const CompanySetup = () => {
     setError(null);
 
     try {
+      // Get current session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!session) throw new Error('No active session');
+
       // Get current user
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError) throw userError;
@@ -106,7 +134,10 @@ const CompanySetup = () => {
             city: formData.city,
             state: formData.state,
             zip_code: formData.zipCode,
-            owner_id: user.id
+            owner_id: user.id,
+            subscription_tier: 'test_drive',
+            is_trial: true,
+            trial_ends_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
           }
         ])
         .select()
@@ -114,9 +145,6 @@ const CompanySetup = () => {
 
       if (companyError) throw companyError;
       if (!company) throw new Error('Failed to create company');
-
-      // The user-company association is automatically created by the database trigger
-      // defined in the migration file, so we don't need to create it manually
 
       navigate('/app/dashboard');
     } catch (err: any) {

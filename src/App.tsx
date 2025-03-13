@@ -5,6 +5,8 @@ import Landing from './pages/Landing';
 import Auth from './pages/Auth';
 import Dashboard from './pages/Dashboard';
 import Vehicles from './pages/Vehicles';
+import AddVehicle from './pages/AddVehicle';
+import EditVehicle from './pages/EditVehicle';
 import Equipment from './pages/Equipment';
 import Maintenance from './pages/Maintenance';
 import Operators from './pages/Operators';
@@ -12,6 +14,7 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Pricing from './pages/Pricing';
 import CompanySetup from './pages/CompanySetup';
+import SubscriptionForm from './pages/SubscriptionForm';
 
 function App() {
   return (
@@ -20,11 +23,14 @@ function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/auth" element={<Auth />} />
         <Route path="/pricing" element={<Pricing />} />
+        <Route path="/subscription" element={<SubscriptionForm />} />
         <Route path="/setup" element={<CompanySetup />} />
         <Route path="/app" element={<Layout />}>
           <Route index element={<Navigate to="/app/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="vehicles" element={<Vehicles />} />
+          <Route path="vehicles/add" element={<AddVehicle />} />
+          <Route path="vehicles/edit/:id" element={<EditVehicle />} />
           <Route path="equipment" element={<Equipment />} />
           <Route path="maintenance" element={<Maintenance />} />
           <Route path="operators" element={<Operators />} />
