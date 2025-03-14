@@ -14,9 +14,9 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 const PRICE_LOOKUP = {
-  starter: 'price_starter',
-  standard: 'price_standard',
-  professional: 'price_professional'
+  starter: 'Starter-10',
+  standard: 'Standard-50',
+  professional: 'Professional-250'
 };
 
 serve(async (req) => {
