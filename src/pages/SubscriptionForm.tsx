@@ -62,33 +62,32 @@ const SubscriptionForm = () => {
           'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
         },
         body: JSON.stringify({
-          priceId: `price_${newTier}`, // This should match your Stripe price IDs
+          priceId: newTier,
           customerId: company.stripe_customer_id,
           companyId: company.id,
           returnUrl: `${window.location.origin}/app/settings`
         })
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create checkout session');
-      }
+      const data = await response.json();
 
-      const { sessionId } = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create checkout session');
+      }
 
       // Redirect to Stripe Checkout
       const stripe = await stripePromise;
       if (!stripe) throw new Error('Stripe failed to load');
 
       const { error: stripeError } = await stripe.redirectToCheckout({
-        sessionId
+        sessionId: data.sessionId
       });
 
       if (stripeError) throw stripeError;
 
     } catch (err: any) {
       console.error('Error:', err);
-      setError(err.message);
+      setError(err.message || 'An unexpected error occurred');
     } finally {
       setLoading(false);
     }

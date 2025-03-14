@@ -14,9 +14,9 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 const PRICE_LOOKUP = {
-  starter: 'Starter-10',
-  standard: 'Standard-50',
-  professional: 'Professional-250'
+  starter: 'price_1RwAu7FDX5hmaeD',
+  standard: 'price_1RwAv2FDX5hmaeD',
+  professional: 'price_1RwAvNFDX5hmaeD'
 };
 
 serve(async (req) => {
@@ -49,10 +49,17 @@ serve(async (req) => {
     }
 
     let customer;
-    if (customerId) {
-      // Use existing customer
-      customer = await stripe.customers.retrieve(customerId);
-    } else {
+    try {
+      if (customerId) {
+        // Try to retrieve existing customer
+        customer = await stripe.customers.retrieve(customerId);
+      }
+    } catch (err) {
+      // Customer not found or other error - we'll create a new one
+      console.log('Customer lookup failed:', err.message);
+    }
+
+    if (!customer) {
       // Get company details to create customer
       const { data: company, error: companyError } = await supabase
         .from('companies')
@@ -86,7 +93,7 @@ serve(async (req) => {
       payment_method_types: ['card'],
       mode: 'subscription',
       line_items: [{
-        price: priceId,
+        price: PRICE_LOOKUP[priceId as keyof typeof PRICE_LOOKUP],
         quantity: 1,
       }],
       success_url: `${returnUrl}?session_id={CHECKOUT_SESSION_ID}`,
