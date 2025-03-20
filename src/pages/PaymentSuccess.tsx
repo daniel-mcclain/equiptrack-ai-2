@@ -39,59 +39,33 @@ const PaymentSuccess = () => {
         if (companyError) throw companyError;
         if (!company) throw new Error('No company found');
 
-        // Call your backend to verify the session and update subscription
-        const response = await fetch('/api/verify-subscription', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${user.id}`
-          },
-          body: JSON.stringify({
-            sessionId,
-            companyId: company.id
-          })
-        });
+        // Call verify-subscription function
+        const response = await fetch(
+          'https://mfgosdmqbeupjvxvlvgb.supabase.co/functions/v1/verify-subscription',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${process.env.VITE_SUPABASE_ANON_KEY}`
+            },
+            body: JSON.stringify({
+              sessionId,
+              companyId: company.id
+            })
+          }
+        );
 
         if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.message);
+          const errorData = await response.json().catch(() => null);
+          throw new Error(errorData?.error || `HTTP error! status: ${response.status}`);
         }
 
         const result = await response.json();
         setSubscriptionDetails(result);
 
-        // Update company subscription details in database
-        const { error: updateError } = await supabase
-          .from('companies')
-          .update({
-            subscription_tier: result.plan,
-            subscription_status: result.status,
-            current_period_end: result.currentPeriodEnd,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', company.id);
-
-        if (updateError) throw updateError;
-
-        // Log subscription event
-        const { error: eventError } = await supabase
-          .from('subscription_events')
-          .insert([{
-            company_id: company.id,
-            event_type: 'subscription_activated',
-            event_data: {
-              session_id: sessionId,
-              plan: result.plan,
-              status: result.status,
-              current_period_end: result.currentPeriodEnd
-            }
-          }]);
-
-        if (eventError) throw eventError;
-
       } catch (err: any) {
         console.error('Error verifying payment:', err);
-        setError(err.message);
+        setError(err.message || 'An error occurred while verifying your payment');
       } finally {
         setLoading(false);
       }
