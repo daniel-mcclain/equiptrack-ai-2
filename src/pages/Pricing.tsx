@@ -20,7 +20,8 @@ const getTierLevel = (tier: string) => {
 };
 
 const PAYMENT_LINKS = {
-  starter: 'https://buy.stripe.com/6oE5o23re2035zi8ww',
+  starter: 'https://buy.stripe.com/test_6oEaG1egQ2R3ghO5kk', // dev link
+  //starter: 'https://buy.stripe.com/6oE5o23re2035zi8ww', // live link
   standard: '',  // To be added
   professional: '' // To be added
 };
