@@ -56,7 +56,7 @@ serve(async (req) => {
         },
       });
     }
-
+  logger.info('finished cors')
     // Only allow POST requests
     if (req.method !== 'POST') {
       logger.error('Invalid request method', { requestId, method: req.method });
