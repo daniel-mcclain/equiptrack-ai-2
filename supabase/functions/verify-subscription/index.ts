@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
 import Stripe from 'https://esm.sh/stripe@14.18.0';
 
+// Initialize Stripe with test key
 const stripe = new Stripe(Deno.env.get('STRIPE_TEST_SECRET_KEY') || '', {
   apiVersion: '2023-10-16',
   httpClient: Stripe.createFetchHttpClient(),
@@ -56,11 +57,27 @@ serve(async (req) => {
         },
       });
     }
-  logger.info('finished cors')
+
     // Only allow POST requests
     if (req.method !== 'POST') {
       logger.error('Invalid request method', { requestId, method: req.method });
       return new Response('Method not allowed', { status: 405 });
+    }
+
+    // Verify authorization header
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      logger.error('Missing or invalid authorization header', { requestId });
+      return new Response(
+        JSON.stringify({ error: 'Missing or invalid authorization header' }),
+        { 
+          status: 401,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        }
+      );
     }
 
     // Parse request body
