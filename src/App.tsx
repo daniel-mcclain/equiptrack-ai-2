@@ -15,6 +15,7 @@ import Settings from './pages/Settings';
 import Pricing from './pages/Pricing';
 import CompanySetup from './pages/CompanySetup';
 import SubscriptionForm from './pages/SubscriptionForm';
+import PaymentSuccess from './pages/PaymentSuccess';
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
         <Route path="/auth" element={<Auth />} />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/subscription" element={<SubscriptionForm />} />
+        <Route path="/payment/success" element={<PaymentSuccess />} />
         <Route path="/setup" element={<CompanySetup />} />
         <Route path="/app" element={<Layout />}>
           <Route index element={<Navigate to="/app/dashboard" replace />} />

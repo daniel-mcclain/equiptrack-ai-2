@@ -1,25 +1,19 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Calendar, CreditCard } from 'lucide-react';
-import { supabase } from '../lib/supabase';
-import { loadStripe } from '@stripe/stripe-js';
+import { ArrowLeft } from 'lucide-react';
 
 interface LocationState {
   currentTier: string;
   newTier: string;
   price: string;
   isUpgrade: boolean;
+  paymentLink?: string; // Add optional payment link
 }
-
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
 
 const SubscriptionForm = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentTier, newTier, price, isUpgrade } = location.state as LocationState;
-
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { currentTier, newTier, price, isUpgrade, paymentLink } = location.state as LocationState;
 
   // Calculate next billing date (1 month from now)
   const nextBillingDate = new Date();
@@ -35,61 +29,13 @@ const SubscriptionForm = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError) throw userError;
-      if (!user) throw new Error('No user found');
-
-      // Get user's company
-      const { data: company, error: companyError } = await supabase
-        .from('companies')
-        .select('*')
-        .eq('owner_id', user.id)
-        .single();
-
-      if (companyError) throw companyError;
-      if (!company) throw new Error('No company found');
-
-      // Create Stripe Checkout Session
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-checkout-session`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
-        },
-        body: JSON.stringify({
-          priceId: newTier,
-          customerId: company.stripe_customer_id,
-          companyId: company.id,
-          returnUrl: `${window.location.origin}/app/settings`
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create checkout session');
-      }
-
-      // Redirect to Stripe Checkout
-      const stripe = await stripePromise;
-      if (!stripe) throw new Error('Stripe failed to load');
-
-      const { error: stripeError } = await stripe.redirectToCheckout({
-        sessionId: data.sessionId
-      });
-
-      if (stripeError) throw stripeError;
-
-    } catch (err: any) {
-      console.error('Error:', err);
-      setError(err.message || 'An unexpected error occurred');
-    } finally {
-      setLoading(false);
+    
+    if (paymentLink) {
+      // Redirect to external payment link if provided
+      window.location.href = paymentLink;
+    } else {
+      // Fallback behavior - navigate to settings
+      navigate('/app/settings');
     }
   };
 
@@ -125,12 +71,6 @@ const SubscriptionForm = () => {
             </div>
 
             <div className="mt-8">
-              {error && (
-                <div className="rounded-md bg-red-50 p-4 mb-6">
-                  <p className="text-sm text-red-800">{error}</p>
-                </div>
-              )}
-
               <div className="space-y-6">
                 <div className="bg-gray-50 rounded-lg p-6">
                   <h3 className="text-lg font-medium text-gray-900 mb-4">Plan Changes</h3>
@@ -147,8 +87,7 @@ const SubscriptionForm = () => {
                 </div>
 
                 <div className="bg-blue-50 rounded-lg p-6">
-                  <h3 className="text-lg font-medium text-blue-900 mb-4 flex items-center">
-                    <Calendar className="h-5 w-5 mr-2" />
+                  <h3 className="text-lg font-medium text-blue-900 mb-4">
                     Billing Summary
                   </h3>
                   <ul className="space-y-3">
@@ -157,7 +96,7 @@ const SubscriptionForm = () => {
                       <span>{formatDate(nextBillingDate)}</span>
                     </li>
                     <li className="flex items-center text-blue-900">
-                      <span className="w-48 font-medium">Amount to be Charged:</span>
+                      <span className="w-48 font-medium">Amount:</span>
                       <span className="font-semibold">${price}</span>
                     </li>
                     <li className="flex items-center text-blue-900">
@@ -168,22 +107,18 @@ const SubscriptionForm = () => {
                 </div>
 
                 <div className="bg-gray-50 rounded-lg p-6">
-                  <div className="flex items-start">
-                    <CreditCard className="h-5 w-5 text-gray-400 mt-0.5 mr-3" />
-                    <p className="text-sm text-gray-600">
-                      Your subscription will be updated immediately. You will be charged the new rate of ${price} on {formatDate(nextBillingDate)}. All prices are in USD and include applicable taxes.
-                    </p>
-                  </div>
+                  <p className="text-sm text-gray-600">
+                    Your subscription will be updated immediately. The new rate of ${price} will be applied on {formatDate(nextBillingDate)}. All prices are in USD and include applicable taxes.
+                  </p>
                 </div>
               </div>
 
               <form onSubmit={handleSubmit} className="mt-8">
                 <button
                   type="submit"
-                  disabled={loading}
-                  className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                 >
-                  {loading ? 'Processing...' : `Confirm ${isUpgrade ? 'Upgrade' : 'Downgrade'}`}
+                  {`Continue to Payment`}
                 </button>
               </form>
             </div>
