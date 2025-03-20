@@ -1,5 +1,6 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 import { 
   Truck, 
   BarChart, 
@@ -18,6 +19,23 @@ import {
 } from 'lucide-react';
 
 const LandingPage = () => {
+  const navigate = useNavigate();
+  const { isAuthenticated, isLoading } = useAuth();
+
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      navigate('/app/dashboard');
+    }
+  }, [isAuthenticated, isLoading, navigate]);
+
+  if (isLoading || isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-white">
       <nav className="bg-white border-b">

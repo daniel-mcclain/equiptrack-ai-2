@@ -1,15 +1,31 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Lock, Mail, Truck } from 'lucide-react';
+import { useAuth } from '../hooks/useAuth';
 
 const Auth = () => {
   const navigate = useNavigate();
+  const { isAuthenticated, isLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSignUp, setIsSignUp] = useState(false);
+
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      navigate('/app/dashboard');
+    }
+  }, [isAuthenticated, isLoading, navigate]);
+
+  if (isLoading || isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
