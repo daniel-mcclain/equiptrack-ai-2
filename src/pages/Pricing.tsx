@@ -19,6 +19,12 @@ const getTierLevel = (tier: string) => {
   return levels[tier as keyof typeof levels] || 0;
 };
 
+const PAYMENT_LINKS = {
+  starter: 'https://buy.stripe.com/6oE5o23re2035zi8ww',
+  standard: '',  // To be added
+  professional: '' // To be added
+};
+
 const PricingTier = ({ 
   name, 
   price, 
@@ -57,7 +63,8 @@ const PricingTier = ({
           currentTier: currentTierLevel > 0 ? getTierName(currentTierLevel) : 'No Plan',
           newTier: tier,
           price,
-          isUpgrade
+          isUpgrade,
+          paymentLink: PAYMENT_LINKS[tier]
         }
       });
     }
