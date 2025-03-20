@@ -39,6 +39,11 @@ const PaymentSuccess = () => {
         if (companyError) throw companyError;
         if (!company) throw new Error('No company found');
 
+        // Get session token
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+        if (!session) throw new Error('No session found');
+
         // Call verify-subscription function
         const response = await fetch(
           'https://mfgosdmqbeupjvxvlvgb.supabase.co/functions/v1/verify-subscription',
@@ -46,7 +51,7 @@ const PaymentSuccess = () => {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              Authorization: `Bearer ${process.env.VITE_SUPABASE_ANON_KEY}`
+              'Authorization': `Bearer ${session.access_token}`
             },
             body: JSON.stringify({
               sessionId,
