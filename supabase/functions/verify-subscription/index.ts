@@ -10,9 +10,7 @@ const stripeKey = Deno.env.get('STRIPE_TEST_SECRET_KEY');
 // Initialize Stripe with test key
 const stripe = new Stripe(Deno.env.get('STRIPE_TEST_SECRET_KEY') || '', {
   apiVersion: '2024-02-15',
-  httpClient: Stripe.createFetchHttpClient(),
-  api_key: stripeKey,
-  stripeAccount: undefined
+  api_key: stripeKey
 });
 
 // CORS headers
