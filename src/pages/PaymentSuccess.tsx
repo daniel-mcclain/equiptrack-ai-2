@@ -6,7 +6,8 @@ import { supabase } from '../lib/supabase';
 const PaymentSuccess = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const sessionId = searchParams.get('session_id');
+  const subscription = searchParams.get('subscription');
+  const sessionId = searchParams.get('sessionID');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [subscriptionDetails, setSubscriptionDetails] = useState<{
@@ -55,14 +56,15 @@ const PaymentSuccess = () => {
             },
             body: JSON.stringify({
               sessionId,
-              companyId: company.id
+              companyId: company.id,
+              subscription
             })
           }
         );
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => null);
-          throw new Error(errorData?.error || `HTTP error! status: ${response.status}`);
+          throw new Error(errorData?.error?.message || `HTTP error! status: ${response.status}`);
         }
 
         const result = await response.json();
@@ -77,7 +79,7 @@ const PaymentSuccess = () => {
     };
 
     verifyPayment();
-  }, [sessionId]);
+  }, [sessionId, subscription]);
 
   if (loading) {
     return (
