@@ -5,11 +5,13 @@ import Stripe from 'https://esm.sh/stripe@14.18.0';
 const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
+const stripeKey = Deno.env.geet('STRIPE_TEST_SECRET_KEY');
 
 // Initialize Stripe with test key
 const stripe = new Stripe(Deno.env.get('STRIPE_TEST_SECRET_KEY') || '', {
   apiVersion: '2024-02-15',
   httpClient: Stripe.createFetchHttpClient(),
+  api_key: stripeKey,
   stripeAccount: undefined
 });
 
