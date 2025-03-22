@@ -6,6 +6,7 @@ import Stripe from 'https://esm.sh/stripe@14.18.0';
 const stripe = new Stripe(Deno.env.get('STRIPE_TEST_SECRET_KEY') || '', {
   apiVersion: '2024-02-15',
   httpClient: Stripe.createFetchHttpClient(),
+  stripeAccount: undefined, // Add this to ensure no connected account is used
 });
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
@@ -83,24 +84,13 @@ serve(async (req) => {
       );
     }
 
-    // Verify authorization header
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      logger.error('Missing or invalid authorization header', { requestId });
-      return new Response(
-        JSON.stringify({ 
-          error: { message: 'Missing or invalid authorization header' },
-          requestId
-        }),
-        { 
-          status: 401,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*'
-          }
-        }
-      );
-    }
+    // Log the Stripe key being used (masked)
+    const stripeKey = Deno.env.get('STRIPE_TEST_SECRET_KEY') || '';
+    logger.debug('Using Stripe key', {
+      requestId,
+      keyPrefix: stripeKey.substring(0, 7),
+      keyLength: stripeKey.length
+    });
 
     // Parse request body
     let requestBody;
