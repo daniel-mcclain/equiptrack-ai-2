@@ -2,16 +2,19 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
 import Stripe from 'https://esm.sh/stripe@14.18.0';
 
+const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
 // Initialize Stripe with test key
 const stripe = new Stripe(Deno.env.get('STRIPE_TEST_SECRET_KEY') || '', {
   apiVersion: '2024-02-15',
   httpClient: Stripe.createFetchHttpClient(),
+  api_key:supabaseServiceKey,
   stripeAccount: undefined, // Add this to ensure no connected account is used
 });
 
-const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
 
 // Logger utility for consistent formatting
 const logger = {
