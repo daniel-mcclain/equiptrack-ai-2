@@ -4,7 +4,7 @@ import Stripe from 'https://esm.sh/stripe@14.18.0';
 
 // Initialize Stripe with test key
 const stripe = new Stripe(Deno.env.get('STRIPE_TEST_SECRET_KEY') || '', {
-  apiVersion: '2023-10-16',
+  apiVersion: '2024-02-15',
   httpClient: Stripe.createFetchHttpClient(),
 });
 
@@ -41,6 +41,13 @@ const logger = {
   }
 };
 
+interface StripeError extends Error {
+  type?: string;
+  code?: string;
+  decline_code?: string;
+  param?: string;
+}
+
 serve(async (req) => {
   const requestId = crypto.randomUUID();
   logger.info('Received subscription verification request', { requestId });
@@ -61,7 +68,19 @@ serve(async (req) => {
     // Only allow POST requests
     if (req.method !== 'POST') {
       logger.error('Invalid request method', { requestId, method: req.method });
-      return new Response('Method not allowed', { status: 405 });
+      return new Response(
+        JSON.stringify({ 
+          error: { message: 'Method not allowed' },
+          requestId
+        }), 
+        { 
+          status: 405,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        }
+      );
     }
 
     // Verify authorization header
@@ -69,7 +88,10 @@ serve(async (req) => {
     if (!authHeader?.startsWith('Bearer ')) {
       logger.error('Missing or invalid authorization header', { requestId });
       return new Response(
-        JSON.stringify({ error: 'Missing or invalid authorization header' }),
+        JSON.stringify({ 
+          error: { message: 'Missing or invalid authorization header' },
+          requestId
+        }),
         { 
           status: 401,
           headers: {
@@ -81,7 +103,26 @@ serve(async (req) => {
     }
 
     // Parse request body
-    const requestBody = await req.json();
+    let requestBody;
+    try {
+      requestBody = await req.json();
+    } catch (err) {
+      logger.error('Failed to parse request body', { requestId, error: err });
+      return new Response(
+        JSON.stringify({
+          error: { message: 'Invalid request body' },
+          requestId
+        }),
+        {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        }
+      );
+    }
+
     logger.debug('Parsed request body', { requestId, body: requestBody });
 
     const { sessionId, companyId } = requestBody;
@@ -90,17 +131,55 @@ serve(async (req) => {
     if (!sessionId || !companyId) {
       logger.error('Missing required fields', { requestId, sessionId, companyId });
       return new Response(
-        JSON.stringify({ error: 'Missing required fields' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        JSON.stringify({
+          error: { message: 'Missing required fields' },
+          requestId
+        }),
+        {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        }
       );
     }
 
     logger.info('Retrieving Stripe checkout session', { requestId, sessionId });
 
-    // Retrieve the checkout session
-    const session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ['subscription']
-    });
+    // Retrieve the checkout session with expanded subscription
+    let session;
+    try {
+      session = await stripe.checkout.sessions.retrieve(sessionId, {
+        expand: ['subscription', 'subscription.latest_invoice']
+      });
+    } catch (err) {
+      const stripeError = err as StripeError;
+      logger.error('Failed to retrieve Stripe session', {
+        requestId,
+        error: {
+          message: stripeError.message,
+          type: stripeError.type,
+          code: stripeError.code
+        }
+      });
+      return new Response(
+        JSON.stringify({
+          error: {
+            message: 'Failed to retrieve checkout session',
+            details: stripeError.message
+          },
+          requestId
+        }),
+        {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        }
+      );
+    }
 
     logger.debug('Retrieved checkout session', {
       requestId,
@@ -115,14 +194,38 @@ serve(async (req) => {
         requestId,
         paymentStatus: session.payment_status
       });
-      throw new Error('Payment not completed');
+      return new Response(
+        JSON.stringify({
+          error: { message: 'Payment not completed' },
+          requestId
+        }),
+        {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        }
+      );
     }
 
     // Get subscription details
     const subscription = session.subscription as Stripe.Subscription;
     if (!subscription) {
       logger.error('No subscription found in session', { requestId, sessionId });
-      throw new Error('No subscription found');
+      return new Response(
+        JSON.stringify({
+          error: { message: 'No subscription found' },
+          requestId
+        }),
+        {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        }
+      );
     }
 
     logger.info('Processing subscription details', {
@@ -131,16 +234,18 @@ serve(async (req) => {
       status: subscription.status
     });
 
-    // Map subscription status
+    // Map subscription details
     const status = subscription.status;
     const currentPeriodEnd = new Date(subscription.current_period_end * 1000);
     const plan = subscription.items.data[0].price.lookup_key || 'unknown';
+    const priceId = subscription.items.data[0].price.id;
 
     logger.debug('Mapped subscription details', {
       requestId,
       status,
       currentPeriodEnd,
-      plan
+      plan,
+      priceId
     });
 
     // Update company subscription details
@@ -158,6 +263,9 @@ serve(async (req) => {
         subscription_status: status,
         current_period_end: currentPeriodEnd.toISOString(),
         stripe_subscription_id: subscription.id,
+        stripe_price_id: priceId,
+        stripe_customer_id: session.customer as string,
+        cancel_at_period_end: subscription.cancel_at_period_end,
         updated_at: new Date().toISOString()
       })
       .eq('id', companyId);
@@ -168,7 +276,22 @@ serve(async (req) => {
         companyId,
         error: updateError
       });
-      throw updateError;
+      return new Response(
+        JSON.stringify({
+          error: { 
+            message: 'Failed to update subscription details',
+            details: updateError.message
+          },
+          requestId
+        }),
+        {
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
+        }
+      );
     }
 
     logger.info('Successfully updated company subscription', {
@@ -192,9 +315,12 @@ serve(async (req) => {
         event_data: {
           session_id: sessionId,
           subscription_id: subscription.id,
+          customer_id: session.customer,
           plan,
+          price_id: priceId,
           status,
           current_period_end: currentPeriodEnd.toISOString(),
+          cancel_at_period_end: subscription.cancel_at_period_end,
           verified_at: new Date().toISOString()
         },
         created_at: new Date().toISOString()
@@ -206,7 +332,7 @@ serve(async (req) => {
         companyId,
         error: eventError
       });
-      // Don't throw here, as the main operation succeeded
+      // Continue since the main operation succeeded
     }
 
     logger.info('Subscription verification completed successfully', {
@@ -220,7 +346,10 @@ serve(async (req) => {
       JSON.stringify({
         plan,
         status,
-        currentPeriodEnd: currentPeriodEnd.toISOString()
+        currentPeriodEnd: currentPeriodEnd.toISOString(),
+        customerId: session.customer,
+        priceId,
+        cancelAtPeriodEnd: subscription.cancel_at_period_end
       }),
       { 
         status: 200,
@@ -232,18 +361,22 @@ serve(async (req) => {
     );
 
   } catch (err) {
+    const error = err as Error;
     logger.error('Subscription verification failed', {
       requestId,
-      error: err
+      error: {
+        message: error.message,
+        stack: error.stack
+      }
     });
 
     return new Response(
       JSON.stringify({ 
-        error: err.message,
-        requestId // Include requestId in error response for tracking
+        error: { message: error.message },
+        requestId
       }),
       { 
-        status: 400,
+        status: 500,
         headers: {
           'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': '*',
