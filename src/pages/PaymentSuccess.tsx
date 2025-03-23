@@ -45,9 +45,9 @@ const PaymentSuccess = () => {
         if (sessionError) throw sessionError;
         if (!session) throw new Error('No session found');
 
-        // Call verify-subscription function
+        // Call verify-session function
         const response = await fetch(
-          'https://mfgosdmqbeupjvxvlvgb.supabase.co/functions/v1/verify-subscription',
+          'https://mfgosdmqbeupjvxvlvgb.supabase.co/functions/v1/verify-session',
           {
             method: 'POST',
             headers: {
@@ -68,7 +68,11 @@ const PaymentSuccess = () => {
         }
 
         const result = await response.json();
-        setSubscriptionDetails(result);
+        setSubscriptionDetails({
+          plan: result.plan,
+          status: result.status,
+          currentPeriodEnd: result.current_period_end
+        });
 
       } catch (err: any) {
         console.error('Error verifying payment:', err);
