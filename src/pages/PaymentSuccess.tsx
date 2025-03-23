@@ -7,8 +7,8 @@ const PaymentSuccess = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const subscription = searchParams.get('subscription');
-  // Get sessionId from the correct parameter
-  const sessionId = searchParams.get('session_id');
+  // Get sessionId from the correct parameter - Stripe uses sessionID
+  const sessionId = searchParams.get('sessionID');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [subscriptionDetails, setSubscriptionDetails] = useState<{
