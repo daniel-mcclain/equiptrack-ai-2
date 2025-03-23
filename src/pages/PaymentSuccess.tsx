@@ -7,7 +7,8 @@ const PaymentSuccess = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const subscription = searchParams.get('subscription');
-  const sessionId = searchParams.get('sessionID');
+  // Get sessionId from the correct parameter
+  const sessionId = searchParams.get('session_id');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [subscriptionDetails, setSubscriptionDetails] = useState<{
@@ -25,6 +26,8 @@ const PaymentSuccess = () => {
       }
 
       try {
+        console.log('Verifying session:', sessionId); // Debug log
+
         // Get current user
         const { data: { user }, error: userError } = await supabase.auth.getUser();
         if (userError) throw userError;
@@ -64,14 +67,25 @@ const PaymentSuccess = () => {
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => null);
-          throw new Error(errorData?.error?.message || `HTTP error! status: ${response.status}`);
+          console.error('Verification failed:', errorData); // Debug log
+          throw new Error(
+            errorData?.error?.message || 
+            errorData?.message || 
+            `HTTP error! status: ${response.status}`
+          );
         }
 
         const result = await response.json();
+        console.log('Verification result:', result); // Debug log
+
+        if (result.error) {
+          throw new Error(result.error.message || 'Failed to verify subscription');
+        }
+
         setSubscriptionDetails({
-          plan: result.plan,
-          status: result.status,
-          currentPeriodEnd: result.current_period_end
+          plan: result.plan || subscription || 'unknown',
+          status: result.payment_status || 'unknown',
+          currentPeriodEnd: result.current_period_end || new Date().toISOString()
         });
 
       } catch (err: any) {
@@ -110,6 +124,9 @@ const PaymentSuccess = () => {
               </h1>
               <p className="mt-2 text-sm text-red-600">
                 {error}
+              </p>
+              <p className="mt-2 text-xs text-gray-500">
+                Session ID: {sessionId || 'Not provided'}
               </p>
             </div>
 
