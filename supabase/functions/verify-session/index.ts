@@ -102,7 +102,29 @@ serve(async (req: Request) => {
 
     logger.debug('Parsed request body', { requestId, body: requestBody });
 
-    const sessionId = (await req.json())?.sessionId ?? (await req.json())?.data?.sessionId;
+    // Parse body ONCE
+    let requestBody;
+    try {
+      requestBody = await req.json();
+    } catch (err) {
+      logger.error('Failed to parse request body', { requestId, error: err });
+      return new Response(
+        JSON.stringify({
+          error: { message: 'Invalid request body' },
+          requestId
+        }),
+        {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+    }
+    
+    // Pull sessionId safely from multiple formats
+    const sessionId = requestBody?.sessionId ?? requestBody?.data?.sessionId;
 
     logger.info('sessionId->',{sessionId});
 
