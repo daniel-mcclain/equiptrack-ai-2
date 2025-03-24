@@ -1,9 +1,15 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.7';
 import Stripe from 'npm:stripe';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, {
-  apiVersion: '2023-10-16' // Use stable version
+  apiVersion: '2023-10-16'
 });
+
+// Initialize Supabase client
+const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,7 +17,6 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS'
 };
 
-// Logger utility for consistent formatting
 const logger = {
   info: (message: string, data?: any) => {
     console.log(JSON.stringify({
@@ -42,11 +47,65 @@ const logger = {
   }
 };
 
+async function updateCompanySubscription(
+  companyId: string,
+  subscriptionData: {
+    subscription_tier: string;
+    stripe_customer_id: string;
+    stripe_subscription_id: string;
+    stripe_price_id: string;
+    current_period_end: string;
+    cancel_at_period_end: boolean;
+    is_trial: boolean;
+    trial_ends_at: string | null;
+  }
+) {
+  logger.info('Updating company subscription', { companyId, subscriptionData });
+
+  try {
+    const { error } = await supabase
+      .from('companies')
+      .update({
+        subscription_tier: subscriptionData.subscription_tier,
+        stripe_customer_id: subscriptionData.stripe_customer_id,
+        stripe_subscription_id: subscriptionData.stripe_subscription_id,
+        stripe_price_id: subscriptionData.stripe_price_id,
+        current_period_end: subscriptionData.current_period_end,
+        cancel_at_period_end: subscriptionData.cancel_at_period_end,
+        is_trial: subscriptionData.is_trial,
+        trial_ends_at: subscriptionData.trial_ends_at,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', companyId);
+
+    if (error) throw error;
+
+    // Log subscription event
+    const { error: eventError } = await supabase
+      .from('subscription_events')
+      .insert([{
+        company_id: companyId,
+        event_type: 'subscription_updated',
+        event_data: subscriptionData,
+        created_at: new Date().toISOString()
+      }]);
+
+    if (eventError) {
+      logger.error('Failed to log subscription event', { companyId, error: eventError });
+    }
+
+    logger.info('Successfully updated company subscription', { companyId });
+    return true;
+  } catch (error) {
+    logger.error('Failed to update company subscription', { companyId, error });
+    throw error;
+  }
+}
+
 serve(async (req: Request) => {
   const requestId = crypto.randomUUID();
   logger.info('Received session verification request', { requestId });
 
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     logger.debug('Handling CORS preflight request', { requestId });
     return new Response(null, {
@@ -73,7 +132,6 @@ serve(async (req: Request) => {
   }
 
   try {
-    // Log the Stripe key being used (masked)
     const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') || '';
     logger.debug('Using Stripe key', {
       requestId,
@@ -82,7 +140,6 @@ serve(async (req: Request) => {
       isTest: stripeKey.startsWith('sk_test_')
     });
 
-    // Parse request body
     let requestBody;
     try {
       requestBody = await req.json();
@@ -112,11 +169,11 @@ serve(async (req: Request) => {
 
     const { sessionId, companyId } = requestBody;
 
-    if (!sessionId) {
-      logger.error('Missing sessionId parameter', { requestId });
+    if (!sessionId || !companyId) {
+      logger.error('Missing required parameters', { requestId, sessionId, companyId });
       return new Response(
         JSON.stringify({
-          error: { message: 'Missing sessionId parameter' },
+          error: { message: 'Missing required parameters' },
           requestId
         }),
         {
@@ -135,7 +192,6 @@ serve(async (req: Request) => {
       companyId 
     });
 
-    // Retrieve the checkout session with expanded subscription
     let session;
     try {
       session = await stripe.checkout.sessions.retrieve(
@@ -192,6 +248,23 @@ serve(async (req: Request) => {
 
     const subscription = session.subscription as Stripe.Subscription;
 
+    if (!subscription) {
+      logger.error('No subscription found in session', { requestId, sessionId });
+      return new Response(
+        JSON.stringify({
+          error: { message: 'No subscription found in session' },
+          requestId
+        }),
+        {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+    }
+
     logger.info('Processing session details', {
       requestId,
       sessionId: `${sessionId.substring(0, 10)}...`,
@@ -201,13 +274,32 @@ serve(async (req: Request) => {
       customerId: session.customer
     });
 
+    // Map subscription tier from price lookup key or product name
+    const subscriptionTier = subscription.items.data[0].price.lookup_key || 
+                           subscription.items.data[0].price.product.toString() || 
+                           'starter';
+
+    // Update subscription in database
+    await updateCompanySubscription(companyId, {
+      subscription_tier: subscriptionTier,
+      stripe_customer_id: session.customer as string,
+      stripe_subscription_id: subscription.id,
+      stripe_price_id: subscription.items.data[0].price.id,
+      current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+      cancel_at_period_end: subscription.cancel_at_period_end,
+      is_trial: subscription.status === 'trialing',
+      trial_ends_at: subscription.trial_end 
+        ? new Date(subscription.trial_end * 1000).toISOString()
+        : null
+    });
+
     const response = {
       payment_status: session.payment_status,
       customer_email: session.customer_details?.email,
       subscription_id: subscription?.id,
       customer_id: session.customer,
-      plan: subscription?.items?.data[0]?.price?.lookup_key || 'unknown',
-      price_id: subscription?.items?.data[0]?.price?.id,
+      plan: subscriptionTier,
+      price_id: subscription.items.data[0].price.id,
       status: subscription?.status,
       current_period_end: subscription?.current_period_end 
         ? new Date(subscription.current_period_end * 1000).toISOString()
