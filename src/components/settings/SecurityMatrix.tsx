@@ -14,7 +14,8 @@ const RESOURCES = [
   { id: 'vehicles', name: 'Vehicles', description: 'Vehicle management' },
   { id: 'equipment', name: 'Equipment', description: 'Equipment management' },
   { id: 'maintenance', name: 'Maintenance', description: 'Maintenance schedules and records' },
-  { id: 'operators', name: 'Operators', description: 'Operator management' },
+  { id: 'work_orders', name: 'Work Orders', description: 'Work order management' },
+  { id: 'parts_inventory', name: 'Parts Inventory', description: 'Inventory management' },
   { id: 'reports', name: 'Reports', description: 'Reports and analytics' },
   { id: 'settings', name: 'Settings', description: 'System settings' }
 ];
@@ -23,8 +24,7 @@ const ACTIONS = [
   { id: 'view', name: 'View', description: 'Can view records' },
   { id: 'create', name: 'Create', description: 'Can create new records' },
   { id: 'edit', name: 'Edit', description: 'Can edit existing records' },
-  { id: 'delete', name: 'Delete', description: 'Can delete records' },
-  { id: 'approve', name: 'Approve', description: 'Can approve changes' }
+  { id: 'delete', name: 'Delete', description: 'Can delete records' }
 ];
 
 export const SecurityMatrix: React.FC<SecurityMatrixProps> = ({

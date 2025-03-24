@@ -4,13 +4,14 @@ import {
   Truck, 
   PenTool as Tools, 
   Calendar, 
-  Users, 
+  ClipboardList,
   FileText, 
   Settings, 
   ChevronLeft, 
   ChevronRight, 
   LayoutDashboard,
-  LogOut
+  LogOut,
+  Package
 } from 'lucide-react';
 import { useSidebarStore } from '../store/sidebarStore';
 import { supabase } from '../lib/supabase';
@@ -23,8 +24,9 @@ const Sidebar = () => {
     { icon: LayoutDashboard, label: 'Dashboard', path: '/app/dashboard' },
     { icon: Truck, label: 'Vehicles', path: '/app/vehicles' },
     { icon: Tools, label: 'Equipment', path: '/app/equipment' },
+    { icon: Package, label: 'Inventory', path: '/app/inventory' },
     { icon: Calendar, label: 'Maintenance', path: '/app/maintenance' },
-    { icon: Users, label: 'Operators', path: '/app/operators' },
+    { icon: ClipboardList, label: 'Work Orders', path: '/app/workorders' },
     { icon: FileText, label: 'Reports', path: '/app/reports' },
     { icon: Settings, label: 'Settings', path: '/app/settings' },
   ];

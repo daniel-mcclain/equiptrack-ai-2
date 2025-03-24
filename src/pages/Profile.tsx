@@ -31,14 +31,19 @@ const profileSchema = z.object({
   dateOfBirth: z.string().optional(),
   city: z.string().optional(),
   state: z.string().optional(),
-  country: z.string().optional(),
   language: z.string(),
   theme: z.enum(['light', 'dark', 'system']),
   emailNotifications: z.boolean(),
   pushNotifications: z.boolean(),
   smsNotifications: z.boolean(),
   profileVisibility: z.enum(['public', 'private', 'contacts']),
-  twoFactorEnabled: z.boolean()
+  twoFactorEnabled: z.boolean(),
+  isTechnician: z.boolean(),
+  jobTitle: z.string().optional(),
+  hireDate: z.string().optional(),
+  certifications: z.array(z.string()),
+  skills: z.array(z.string()),
+  hourlyRate: z.string().optional()
 });
 
 type ProfileFormData = z.infer<typeof profileSchema>;
@@ -71,6 +76,8 @@ const Profile = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [isTechnician, setIsTechnician] = useState(false);
+  const [technicianData, setTechnicianData] = useState<any>(null);
 
   const {
     register,
@@ -106,7 +113,19 @@ const Profile = () => {
 
         if (profileError) throw profileError;
 
-        // Load profile data into form
+        // Use maybeSingle() instead of single() to avoid error when no record exists
+        const { data: techData, error: techError } = await supabase
+          .from('technicians')
+          .select('*')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        // Only throw error if it's not a "no rows returned" error
+        if (techError && techError.code !== 'PGRST116') throw techError;
+        
+        setTechnicianData(techData);
+        setIsTechnician(!!techData);
+
         reset({
           firstName: profile.first_name,
           lastName: profile.last_name,
@@ -115,14 +134,19 @@ const Profile = () => {
           dateOfBirth: profile.date_of_birth || '',
           city: profile.city || '',
           state: profile.state || '',
-          country: profile.country || '',
           language: profile.language || 'en',
           theme: profile.theme || 'system',
           emailNotifications: profile.email_notifications || true,
           pushNotifications: profile.push_notifications || true,
           smsNotifications: profile.sms_notifications || false,
           profileVisibility: profile.profile_visibility || 'private',
-          twoFactorEnabled: profile.two_factor_enabled || false
+          twoFactorEnabled: profile.two_factor_enabled || false,
+          isTechnician: !!techData,
+          jobTitle: techData?.job_title || '',
+          hireDate: techData?.hire_date || '',
+          certifications: techData?.certifications || [],
+          skills: techData?.skills || [],
+          hourlyRate: techData?.hourly_rate?.toString() || ''
         });
 
         setAvatarUrl(profile.avatar_url);
@@ -137,7 +161,6 @@ const Profile = () => {
     if (isAuthenticated) {
       loadUserProfile();
     } else {
-      // Load demo data
       reset({
         firstName: 'John',
         lastName: 'Doe',
@@ -146,14 +169,19 @@ const Profile = () => {
         dateOfBirth: '1990-01-01',
         city: 'San Francisco',
         state: 'CA',
-        country: 'United States',
         language: 'en',
         theme: 'system',
         emailNotifications: true,
         pushNotifications: true,
         smsNotifications: false,
         profileVisibility: 'private',
-        twoFactorEnabled: false
+        twoFactorEnabled: false,
+        isTechnician: false,
+        jobTitle: '',
+        hireDate: '',
+        certifications: [],
+        skills: [],
+        hourlyRate: ''
       });
       setAvatarUrl('https://images.unsplash.com/photo-1472099645785-5658abf4ff4e');
       setLoading(false);
@@ -162,7 +190,7 @@ const Profile = () => {
 
   const onSubmit = async (data: ProfileFormData) => {
     if (!isAuthenticated) {
-      setError('Please sign in to save changes');
+      setError('Please sign in to update your profile');
       return;
     }
 
@@ -174,16 +202,24 @@ const Profile = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('No user found');
 
+      const { data: company } = await supabase
+        .from('companies')
+        .select('id')
+        .eq('owner_id', user.id)
+        .single();
+
+      if (!company) throw new Error('No company found');
+
+      // Update user profile
       const { error: updateError } = await supabase
         .from('users')
         .update({
           first_name: data.firstName,
           last_name: data.lastName,
-          phone: data.phone,
-          date_of_birth: data.dateOfBirth,
-          city: data.city,
-          state: data.state,
-          country: data.country,
+          phone: data.phone || null,
+          date_of_birth: data.dateOfBirth || null,
+          city: data.city || null,
+          state: data.state || null,
           language: data.language,
           theme: data.theme,
           email_notifications: data.emailNotifications,
@@ -196,6 +232,52 @@ const Profile = () => {
         .eq('id', user.id);
 
       if (updateError) throw updateError;
+
+      // Handle technician data
+      if (data.isTechnician) {
+        const technicianData = {
+          user_id: user.id,
+          company_id: company.id,
+          job_title: data.jobTitle,
+          hire_date: data.hireDate,
+          certifications: data.certifications,
+          skills: data.skills,
+          hourly_rate: data.hourlyRate ? parseFloat(data.hourlyRate) : null,
+          updated_at: new Date().toISOString()
+        };
+
+        // Check if technician record exists
+        const { data: existingTech } = await supabase
+          .from('technicians')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (existingTech) {
+          // Update existing technician record
+          const { error: techUpdateError } = await supabase
+            .from('technicians')
+            .update(technicianData)
+            .eq('user_id', user.id);
+
+          if (techUpdateError) throw techUpdateError;
+        } else {
+          // Create new technician record
+          const { error: techInsertError } = await supabase
+            .from('technicians')
+            .insert([technicianData]);
+
+          if (techInsertError) throw techInsertError;
+        }
+      } else {
+        // Remove technician record if exists and checkbox is unchecked
+        const { error: techDeleteError } = await supabase
+          .from('technicians')
+          .delete()
+          .eq('user_id', user.id);
+
+        if (techDeleteError) throw techDeleteError;
+      }
 
       setSuccess('Profile updated successfully');
     } catch (err: any) {
@@ -220,7 +302,6 @@ const Profile = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('No user found');
 
-      // Upload file to storage
       const fileExt = file.name.split('.').pop();
       const filePath = `${user.id}/avatar.${fileExt}`;
 
@@ -230,12 +311,10 @@ const Profile = () => {
 
       if (uploadError) throw uploadError;
 
-      // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('avatars')
         .getPublicUrl(filePath);
 
-      // Update user profile
       const { error: updateError } = await supabase
         .from('users')
         .update({ avatar_url: publicUrl })
@@ -291,7 +370,6 @@ const Profile = () => {
           )}
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
-            {/* Profile Picture */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-4">
                 Profile Picture
@@ -333,7 +411,6 @@ const Profile = () => {
               </div>
             </div>
 
-            {/* Personal Information */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label htmlFor="firstName" className="block text-sm font-medium text-gray-700">
@@ -349,7 +426,6 @@ const Profile = () => {
                   <p className="mt-1 text-sm text-red-600">{errors.firstName.message}</p>
                 )}
               </div>
-
               <div>
                 <label htmlFor="lastName" className="block text-sm font-medium text-gray-700">
                   Last Name
@@ -408,8 +484,7 @@ const Profile = () => {
               </div>
             </div>
 
-            {/* Location */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label htmlFor="city" className="block text-sm font-medium text-gray-700">
                   City
@@ -433,21 +508,8 @@ const Profile = () => {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                 />
               </div>
-
-              <div>
-                <label htmlFor="country" className="block text-sm font-medium text-gray-700">
-                  Country
-                </label>
-                <input
-                  type="text"
-                  id="country"
-                  {...register('country')}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                />
-              </div>
             </div>
 
-            {/* Preferences */}
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-4">Preferences</h3>
               
@@ -488,7 +550,6 @@ const Profile = () => {
               </div>
             </div>
 
-            {/* Notifications */}
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-4">Notifications</h3>
               
@@ -534,7 +595,6 @@ const Profile = () => {
               </div>
             </div>
 
-            {/* Privacy */}
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-4">Privacy</h3>
               
@@ -571,7 +631,6 @@ const Profile = () => {
               </div>
             </div>
 
-            {/* Password */}
             <div>
               <h3 className="text-lg font-medium text-gray-900 mb-4">Password</h3>
               
@@ -585,7 +644,69 @@ const Profile = () => {
               </button>
             </div>
 
-            {/* Form Actions */}
+            <div className="bg-white rounded-lg shadow">
+              <div className="p-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Technician Status</h3>
+                
+                <div className="space-y-6">
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      id="isTechnician"
+                      {...register('isTechnician')}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="isTechnician" className="ml-2 block text-sm text-gray-900">
+                      Register as Technician
+                    </label>
+                  </div>
+
+                  {watch('isTechnician') && (
+                    <div className="space-y-6 mt-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                          <label htmlFor="jobTitle" className="block text-sm font-medium text-gray-700">
+                            Job Title
+                          </label>
+                          <input
+                            type="text"
+                            id="jobTitle"
+                            {...register('jobTitle')}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label htmlFor="hireDate" className="block text-sm font-medium text-gray-700">
+                            Hire Date
+                          </label>
+                          <input
+                            type="date"
+                            id="hireDate"
+                            {...register('hireDate')}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          />
+                        </div>
+
+                        <div>
+                          <label htmlFor="hourlyRate" className="block text-sm font-medium text-gray-700">
+                            Hourly Rate
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            id="hourlyRate"
+                            {...register('hourlyRate')}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
             <div className="flex justify-end space-x-3 pt-6 border-t">
               <button
                 type="button"

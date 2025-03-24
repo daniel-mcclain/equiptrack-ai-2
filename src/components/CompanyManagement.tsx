@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Building2, Users, Package, Calendar } from 'lucide-react';
+import { Building2, Users, Package, Calendar, ExternalLink } from 'lucide-react';
 import { DEMO_COMPANY, DEMO_TEAM_MEMBERS, DEMO_COMPANY_STATS } from '../data/demoData';
 import { useAuth } from '../hooks/useAuth';
 
@@ -21,6 +21,7 @@ interface Company {
   city: string;
   state: string;
   zip_code: string;
+  stripe_customer_id: string | null;
 }
 
 const CompanyManagement = () => {
@@ -40,7 +41,8 @@ const CompanyManagement = () => {
           return;
         }
 
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError) throw userError;
         if (!user) throw new Error('No user found');
 
         // Fetch company data
@@ -112,6 +114,11 @@ const CompanyManagement = () => {
       default:
         return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  const getStripeCustomerPortalUrl = () => {
+    if (!company.stripe_customer_id) return null;
+    return `https://dashboard.stripe.com${import.meta.env.DEV ? '/test' : ''}/customers/${company.stripe_customer_id}`;
   };
 
   return (
@@ -210,6 +217,20 @@ const CompanyManagement = () => {
               </p>
             </div>
           </div>
+
+          {company.stripe_customer_id && (
+            <div className="mt-2">
+              <a
+                href={getStripeCustomerPortalUrl()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center text-sm text-blue-600 hover:text-blue-800"
+              >
+                View Billing Details in Stripe
+                <ExternalLink className="ml-1 h-4 w-4" />
+              </a>
+            </div>
+          )}
 
           <div className="mt-6">
             <button

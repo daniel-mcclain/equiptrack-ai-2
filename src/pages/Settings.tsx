@@ -34,6 +34,7 @@ const Settings = () => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const { isAuthenticated, isLoading } = useAuth();
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
 
   useEffect(() => {
     const fetchPermissions = async () => {
@@ -177,6 +178,13 @@ const Settings = () => {
     }
   };
 
+  const handleTabChange = (tabId: string) => {
+    setActiveTab(tabId);
+    if (tabId === 'users') {
+      setShowAddUserModal(true);
+    }
+  };
+
   const renderTabContent = () => {
     switch (activeTab) {
       case 'company':
@@ -184,7 +192,7 @@ const Settings = () => {
       case 'profile':
         return <Profile />;
       case 'users':
-        return <UserManagement />;
+        return <UserManagement showAddModal={showAddUserModal} onCloseAddModal={() => setShowAddUserModal(false)} />;
       case 'security':
         return (
           <SecurityMatrix
@@ -241,7 +249,7 @@ const Settings = () => {
       <SettingsTabs
         tabs={TABS}
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={handleTabChange}
       />
 
       <div className="mt-6">

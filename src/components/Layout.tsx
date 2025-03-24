@@ -8,7 +8,10 @@ const Layout = () => {
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      <Sidebar />
+      {/* Add z-50 to ensure sidebar stays on top */}
+      <div className="fixed z-50">
+        <Sidebar />
+      </div>
       <main 
         className={`flex-1 transition-all duration-300 ${
           isOpen ? 'ml-64' : 'ml-20'

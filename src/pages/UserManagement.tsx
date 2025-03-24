@@ -1,19 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
+  Plus,
   Search,
   Filter,
-  Plus,
   Edit2,
   Trash2,
   Ban,
-  CheckCircle,
-  XCircle,
   AlertCircle,
-  Download,
-  MoreVertical,
   Check,
   X,
   RefreshCw,
@@ -23,6 +20,11 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { ROLES } from '../types/settings';
 
+interface UserManagementProps {
+  showAddModal?: boolean;
+  onCloseAddModal?: () => void;
+}
+
 const userSchema = z.object({
   firstName: z.string().min(2, 'First name must be at least 2 characters'),
   lastName: z.string().min(2, 'Last name must be at least 2 characters'),
@@ -30,28 +32,31 @@ const userSchema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters').optional(),
   role: z.string(),
   status: z.enum(['active', 'inactive', 'suspended']),
+  department: z.string().optional(),
+  title: z.string().optional(),
+  location: z.string().optional(),
+  manager: z.string().optional(),
+  startDate: z.string().optional(),
+  notes: z.string().optional(),
+  isTechnician: z.boolean().optional(),
+  jobTitle: z.string().optional(),
+  certifications: z.array(z.string()).optional(),
+  skills: z.array(z.string()).optional(),
+  hourlyRate: z.string().optional()
 });
 
 type UserFormData = z.infer<typeof userSchema>;
 
-interface User {
-  id: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-  role: string;
-  status: string;
-  last_login: string | null;
-  created_at: string;
-}
-
-const UserManagement = () => {
+const UserManagement: React.FC<UserManagementProps> = ({
+  showAddModal = false,
+  onCloseAddModal
+}) => {
+  const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
-  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [users, setUsers] = useState<User[]>([]);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -68,15 +73,20 @@ const UserManagement = () => {
     handleSubmit,
     formState: { errors },
     reset,
-    setValue
+    setValue,
+    watch
   } = useForm<UserFormData>({
-    resolver: zodResolver(userSchema)
+    resolver: zodResolver(userSchema),
+    defaultValues: {
+      isTechnician: false
+    }
   });
+
+  const isTechnician = watch('isTechnician');
 
   useEffect(() => {
     const fetchUsers = async () => {
       if (!isAuthenticated) {
-        // Load demo data
         setUsers([
           {
             id: '1',
@@ -84,16 +94,6 @@ const UserManagement = () => {
             last_name: 'Doe',
             email: 'john.doe@example.com',
             role: 'admin',
-            status: 'active',
-            last_login: new Date().toISOString(),
-            created_at: new Date().toISOString()
-          },
-          {
-            id: '2',
-            first_name: 'Jane',
-            last_name: 'Smith',
-            email: 'jane.smith@example.com',
-            role: 'manager',
             status: 'active',
             last_login: new Date().toISOString(),
             created_at: new Date().toISOString()
@@ -117,22 +117,15 @@ const UserManagement = () => {
 
         const { data: usersData, error: usersError } = await supabase
           .from('users')
-          .select(`
-            id,
-            first_name,
-            last_name,
-            email,
-            role,
-            status,
-            last_login,
-            created_at
-          `)
-          .eq('company_id', company.id);
+          .select('*')
+          .eq('company_id', company.id)
+          .order('last_name');
 
         if (usersError) throw usersError;
         setUsers(usersData || []);
+
       } catch (err: any) {
-        console.error('Error fetching users:', err);
+        console.error('Error:', err);
         setError(err.message);
       } finally {
         setLoading(false);
@@ -142,13 +135,272 @@ const UserManagement = () => {
     fetchUsers();
   }, [isAuthenticated]);
 
+  // Effect to populate edit form when a user is selected
+  useEffect(() => {
+    const fetchUserDetails = async () => {
+      if (selectedUser && showEditModal) {
+        try {
+          // Get technician data if exists
+          const { data: techData } = await supabase
+            .from('technicians')
+            .select('*')
+            .eq('user_id', selectedUser.id)
+            .maybeSingle();
+
+          setValue('firstName', selectedUser.first_name);
+          setValue('lastName', selectedUser.last_name);
+          setValue('email', selectedUser.email);
+          setValue('role', selectedUser.role);
+          setValue('status', selectedUser.status as 'active' | 'inactive' | 'suspended');
+          setValue('department', selectedUser.department || '');
+          setValue('title', selectedUser.title || '');
+          setValue('location', selectedUser.location || '');
+          setValue('manager', selectedUser.manager || '');
+          setValue('startDate', selectedUser.start_date || '');
+          setValue('notes', selectedUser.notes || '');
+          setValue('isTechnician', !!techData);
+          
+          if (techData) {
+            setValue('jobTitle', techData.job_title || '');
+            setValue('certifications', techData.certifications || []);
+            setValue('skills', techData.skills || []);
+            setValue('hourlyRate', techData.hourly_rate?.toString() || '');
+          }
+        } catch (err) {
+          console.error('Error fetching user details:', err);
+        }
+      }
+    };
+
+    fetchUserDetails();
+  }, [selectedUser, showEditModal, setValue]);
+
+  const handleDeleteUser = async () => {
+    if (!isAuthenticated || !selectedUser) {
+      setError('Please sign in to delete users');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Get current user for audit log
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) throw new Error('No user found');
+
+      // Create audit log entry before deleting user
+      const { error: auditError } = await supabase
+        .from('user_audit_logs')
+        .insert([{
+          user_id: currentUser.id,
+          action: 'DELETE_USER',
+          details: {
+            deleted_user_id: selectedUser.id,
+            deleted_user_email: selectedUser.email,
+            deleted_user_name: `${selectedUser.first_name} ${selectedUser.last_name}`
+          },
+          performed_by: currentUser.id
+        }]);
+
+      if (auditError) throw auditError;
+
+      // Delete user associations in the correct order
+      const { error: workOrdersError } = await supabase
+        .from('work_orders')
+        .update({ assigned_to: null })
+        .eq('assigned_to', selectedUser.id);
+
+      if (workOrdersError) throw workOrdersError;
+
+      const { error: techDeleteError } = await supabase
+        .from('technicians')
+        .delete()
+        .eq('user_id', selectedUser.id);
+
+      if (techDeleteError) throw techDeleteError;
+
+      const { error: userCompaniesDeleteError } = await supabase
+        .from('user_companies')
+        .delete()
+        .eq('user_id', selectedUser.id);
+
+      if (userCompaniesDeleteError) throw userCompaniesDeleteError;
+
+      // Finally delete the user
+      const { error: userDeleteError } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', selectedUser.id);
+
+      if (userDeleteError) throw userDeleteError;
+
+      // Update local state
+      setUsers(prev => prev.filter(user => user.id !== selectedUser.id));
+      setShowDeleteModal(false);
+      setSelectedUser(null);
+      setSuccess('User deleted successfully');
+    } catch (err: any) {
+      console.error('Error deleting user:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEditUser = async (data: UserFormData) => {
+    if (!isAuthenticated || !selectedUser) {
+      setError('Please sign in to edit users');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) throw new Error('No user found');
+
+      // Update user data
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({
+          first_name: data.firstName,
+          last_name: data.lastName,
+          role: data.role,
+          status: data.status,
+          department: data.department || null,
+          title: data.title || null,
+          location: data.location || null,
+          manager: data.manager || null,
+          start_date: data.startDate || null,
+          notes: data.notes || null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedUser.id);
+
+      if (updateError) throw updateError;
+
+      // Handle technician data
+      if (data.isTechnician) {
+        const technicianData = {
+          user_id: selectedUser.id,
+          company_id: selectedUser.company_id,
+          job_title: data.jobTitle,
+          certifications: data.certifications || [],
+          skills: data.skills || [],
+          hourly_rate: data.hourlyRate ? parseFloat(data.hourlyRate) : null,
+          updated_at: new Date().toISOString()
+        };
+
+        // Check if technician record exists
+        const { data: existingTech } = await supabase
+          .from('technicians')
+          .select('id')
+          .eq('user_id', selectedUser.id)
+          .maybeSingle();
+
+        if (existingTech) {
+          // Update existing technician record
+          const { error: techUpdateError } = await supabase
+            .from('technicians')
+            .update(technicianData)
+            .eq('user_id', selectedUser.id);
+
+          if (techUpdateError) throw techUpdateError;
+        } else {
+          // Create new technician record
+          const { error: techInsertError } = await supabase
+            .from('technicians')
+            .insert([technicianData]);
+
+          if (techInsertError) throw techInsertError;
+        }
+      } else {
+        // Remove technician record if exists and checkbox is unchecked
+        const { error: techDeleteError } = await supabase
+          .from('technicians')
+          .delete()
+          .eq('user_id', selectedUser.id);
+
+        if (techDeleteError) throw techDeleteError;
+      }
+
+      // Create audit log for user update
+      const { error: auditError } = await supabase
+        .from('user_audit_logs')
+        .insert([{
+          user_id: currentUser.id,
+          action: 'UPDATE_USER',
+          details: {
+            updated_user_id: selectedUser.id,
+            updated_user_email: data.email,
+            previous_role: selectedUser.role,
+            new_role: data.role,
+            previous_status: selectedUser.status,
+            new_status: data.status,
+            is_technician: data.isTechnician
+          },
+          performed_by: currentUser.id
+        }]);
+
+      if (auditError) throw auditError;
+
+      // Update user_companies if role changed
+      if (data.role !== selectedUser.role) {
+        const { error: roleUpdateError } = await supabase
+          .from('user_companies')
+          .update({ role: data.role })
+          .eq('user_id', selectedUser.id);
+
+        if (roleUpdateError) throw roleUpdateError;
+      }
+
+      // Refresh users list
+      const { data: updatedUsers, error: fetchError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('company_id', selectedUser.company_id)
+        .order('last_name');
+
+      if (fetchError) throw fetchError;
+      setUsers(updatedUsers || []);
+
+      setShowEditModal(false);
+      setSelectedUser(null);
+      setSuccess('User updated successfully');
+      reset();
+    } catch (err: any) {
+      console.error('Error updating user:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleAddUser = async (data: UserFormData) => {
     if (!isAuthenticated) {
       setError('Please sign in to add users');
       return;
     }
 
+    setLoading(true);
+    setError(null);
+
     try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('No user found');
+
+      // Get company
+      const { data: company } = await supabase
+        .from('companies')
+        .select('id')
+        .eq('owner_id', user.id)
+        .single();
+
+      if (!company) throw new Error('No company found');
+
       // Create auth user
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: data.email,
@@ -162,29 +414,24 @@ const UserManagement = () => {
       });
 
       if (authError) throw authError;
-
-      // Get company
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('No user found');
-
-      const { data: company } = await supabase
-        .from('companies')
-        .select('id')
-        .eq('owner_id', user.id)
-        .single();
-
-      if (!company) throw new Error('No company found');
+      if (!authData.user) throw new Error('Failed to create user');
 
       // Create user profile
       const { data: userData, error: userError } = await supabase
         .from('users')
         .insert([{
-          id: authData.user!.id,
+          id: authData.user.id,
           first_name: data.firstName,
           last_name: data.lastName,
           email: data.email,
           role: data.role,
           status: data.status,
+          department: data.department,
+          title: data.title,
+          location: data.location,
+          manager: data.manager,
+          start_date: data.startDate,
+          notes: data.notes,
           company_id: company.id
         }])
         .select()
@@ -192,135 +439,71 @@ const UserManagement = () => {
 
       if (userError) throw userError;
 
-      setUsers(prev => [...prev, userData]);
-      setShowAddModal(false);
+      // Link user to company
+      const { error: linkError } = await supabase
+        .from('user_companies')
+        .insert([{
+          user_id: authData.user.id,
+          company_id: company.id,
+          role: data.role
+        }]);
+
+      if (linkError) throw linkError;
+
+      // Create technician record if checkbox is checked
+      if (data.isTechnician) {
+        const { error: techError } = await supabase
+          .from('technicians')
+          .insert([{
+            user_id: authData.user.id,
+            company_id: company.id,
+            job_title: data.jobTitle,
+            certifications: data.certifications || [],
+            skills: data.skills || [],
+            hourly_rate: data.hourlyRate ? parseFloat(data.hourlyRate) : null,
+            status: 'active'
+          }]);
+
+        if (techError) throw techError;
+      }
+
+      // Create audit log for user creation
+      const { error: auditError } = await supabase
+        .from('user_audit_logs')
+        .insert([{
+          user_id: user.id,
+          action: 'CREATE_USER',
+          details: {
+            created_user_id: authData.user.id,
+            created_user_email: data.email,
+            created_user_role: data.role,
+            is_technician: data.isTechnician
+          },
+          performed_by: user.id
+        }]);
+
+      if (auditError) throw auditError;
+
+      // Refresh users list
+      const { data: updatedUsers, error: fetchError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('company_id', company.id)
+        .order('last_name');
+
+      if (fetchError) throw fetchError;
+      setUsers(updatedUsers || []);
+
+      onCloseAddModal?.();
       setSuccess('User added successfully');
       reset();
     } catch (err: any) {
       console.error('Error adding user:', err);
       setError(err.message);
+    } finally {
+      setLoading(false);
     }
   };
-
-  const handleEditUser = async (data: UserFormData) => {
-    if (!isAuthenticated || !selectedUser) {
-      setError('Please sign in to edit users');
-      return;
-    }
-
-    try {
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({
-          first_name: data.firstName,
-          last_name: data.lastName,
-          role: data.role,
-          status: data.status,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', selectedUser.id);
-
-      if (updateError) throw updateError;
-
-      setUsers(prev =>
-        prev.map(user =>
-          user.id === selectedUser.id
-            ? {
-                ...user,
-                first_name: data.firstName,
-                last_name: data.lastName,
-                role: data.role,
-                status: data.status
-              }
-            : user
-        )
-      );
-
-      setShowEditModal(false);
-      setSuccess('User updated successfully');
-      setSelectedUser(null);
-      reset();
-    } catch (err: any) {
-      console.error('Error updating user:', err);
-      setError(err.message);
-    }
-  };
-
-  const handleDeleteUser = async () => {
-    if (!isAuthenticated || !selectedUser) {
-      setError('Please sign in to delete users');
-      return;
-    }
-
-    try {
-      const { error: deleteError } = await supabase
-        .from('users')
-        .update({ status: 'deleted' })
-        .eq('id', selectedUser.id);
-
-      if (deleteError) throw deleteError;
-
-      setUsers(prev => prev.filter(user => user.id !== selectedUser.id));
-      setShowDeleteModal(false);
-      setSuccess('User deleted successfully');
-      setSelectedUser(null);
-    } catch (err: any) {
-      console.error('Error deleting user:', err);
-      setError(err.message);
-    }
-  };
-
-  const handleBulkAction = async (action: 'activate' | 'deactivate' | 'delete') => {
-    if (!isAuthenticated || selectedUsers.length === 0) {
-      setError('Please select users to perform bulk actions');
-      return;
-    }
-
-    try {
-      const status = action === 'activate' ? 'active' : action === 'deactivate' ? 'inactive' : 'deleted';
-      
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ status })
-        .in('id', selectedUsers);
-
-      if (updateError) throw updateError;
-
-      if (action === 'delete') {
-        setUsers(prev => prev.filter(user => !selectedUsers.includes(user.id)));
-      } else {
-        setUsers(prev =>
-          prev.map(user =>
-            selectedUsers.includes(user.id)
-              ? { ...user, status }
-              : user
-          )
-        );
-      }
-
-      setSelectedUsers([]);
-      setSuccess(`Users ${action}d successfully`);
-    } catch (err: any) {
-      console.error('Error performing bulk action:', err);
-      setError(err.message);
-    }
-  };
-
-  const filteredUsers = users.filter(user => {
-    const searchMatch = 
-      user.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.last_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchTerm.toLowerCase());
-
-    const roleMatch = !filters.role || user.role === filters.role;
-    const statusMatch = !filters.status || user.status === filters.status;
-    
-    const dateMatch = !filters.dateRange || (
-      new Date(user.created_at) >= new Date(Date.now() - parseInt(filters.dateRange) * 24 * 60 * 60 * 1000)
-    );
-
-    return searchMatch && roleMatch && statusMatch && dateMatch;
-  });
 
   if (loading) {
     return (
@@ -331,7 +514,7 @@ const UserManagement = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div>
       {!isAuthenticated && (
         <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
           <p className="text-sm text-blue-800">
@@ -341,28 +524,15 @@ const UserManagement = () => {
         </div>
       )}
 
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">User Management</h1>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-        >
-          <Plus className="h-5 w-5 mr-2" />
-          Add User
-        </button>
-      </div>
-
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center">
-          <AlertCircle className="h-5 w-5 text-red-400 mr-2" />
-          <p className="text-sm text-red-800">{error}</p>
+        <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-sm text-red-600">{error}</p>
         </div>
       )}
 
       {success && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center">
-          <CheckCircle className="h-5 w-5 text-green-400 mr-2" />
-          <p className="text-sm text-green-800">{success}</p>
+        <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
+          <p className="text-sm text-green-600">{success}</p>
         </div>
       )}
 
@@ -398,72 +568,24 @@ const UserManagement = () => {
                 onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
                 className="border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
               >
-                <option value="">All Statuses</option>
+                <option value="">All Status</option>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
                 <option value="suspended">Suspended</option>
               </select>
-
-              <select
-                value={filters.dateRange}
-                onChange={(e) => setFilters(prev => ({ ...prev, dateRange: e.target.value }))}
-                className="border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="">All Time</option>
-                <option value="7">Last 7 days</option>
-                <option value="30">Last 30 days</option>
-                <option value="90">Last 90 days</option>
-              </select>
             </div>
-
-            {selectedUsers.length > 0 && (
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => handleBulkAction('activate')}
-                  className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
-                >
-                  <CheckCircle className="h-4 w-4 mr-1" />
-                  Activate
-                </button>
-                <button
-                  onClick={() => handleBulkAction('deactivate')}
-                  className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-orange-600 hover:bg-orange-700"
-                >
-                  <Ban className="h-4 w-4 mr-1" />
-                  Deactivate
-                </button>
-                <button
-                  onClick={() => handleBulkAction('delete')}
-                  className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
-                >
-                  <Trash2 className="h-4 w-4 mr-1" />
-                  Delete
-                </button>
-              </div>
-            )}
           </div>
 
-          {/* Users Table */}
+          {/* Users List */}
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <input
-                      type="checkbox"
-                      checked={selectedUsers.length === filteredUsers.length}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedUsers(filteredUsers.map(user => user.id));
-                        } else {
-                          setSelectedUsers([]);
-                        }
-                      }}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
+                    Name
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    User
+                    Email
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Role
@@ -480,33 +602,15 @@ const UserManagement = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredUsers.map(user => (
+                {users.map((user) => (
                   <tr key={user.id}>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <input
-                        type="checkbox"
-                        checked={selectedUsers.includes(user.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedUsers(prev => [...prev, user.id]);
-                          } else {
-                            setSelectedUsers(prev => prev.filter(id => id !== user.id));
-                          }
-                        }}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
+                      <div className="text-sm font-medium text-gray-900">
+                        {user.first_name} {user.last_name}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">
-                            {user.first_name} {user.last_name}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {user.email}
-                          </div>
-                        </div>
-                      </div>
+                      <div className="text-sm text-gray-500">{user.email}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
@@ -535,11 +639,6 @@ const UserManagement = () => {
                           onClick={() => {
                             setSelectedUser(user);
                             setShowEditModal(true);
-                            setValue('firstName', user.first_name);
-                            setValue('lastName', user.last_name);
-                            setValue('email', user.email);
-                            setValue('role', user.role);
-                            setValue('status', user.status as 'active' | 'inactive' | 'suspended');
                           }}
                           className="text-blue-600 hover:text-blue-900"
                         >
@@ -564,187 +663,25 @@ const UserManagement = () => {
         </div>
       </div>
 
-      {/* Add User Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"></div>
-            <div className="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
-              <div className="absolute top-0 right-0 pt-4 pr-4">
-                <button
-                  onClick={() => {
-                    setShowAddModal(false);
-                    reset();
-                  }}
-                  className="bg-white rounded-md text-gray-400 hover:text-gray-500"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
-              <div className="sm:flex sm:items-start">
-                <div className="mt-3 text-center sm:mt-0 sm:text-left w-full">
-                  <h3 className="text-lg leading-6 font-medium text-gray-900">
-                    Add New User
-                  </h3>
-                  <form onSubmit={handleSubmit(handleAddUser)} className="mt-6 space-y-6">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label htmlFor="firstName" className="block text-sm font-medium text-gray-700">
-                          First Name
-                        </label>
-                        <input
-                          type="text"
-                          id="firstName"
-                          {...register('firstName')}
-                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                        />
-                        {errors.firstName && (
-                          <p className="mt-1 text-sm text-red-600">{errors.firstName.message}</p>
-                        )}
-                      </div>
-                      <div>
-                        <label htmlFor="lastName" className="block text-sm font-medium text-gray-700">
-                          Last Name
-                        </label>
-                        <input
-                          type="text"
-                          id="lastName"
-                          {...register('lastName')}
-                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                        />
-                        {errors.lastName && (
-                          <p className="mt-1 text-sm text-red-600">{errors.lastName.message}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                        Email
-                      </label>
-                      <input
-                        type="email"
-                        id="email"
-                        {...register('email')}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                      />
-                      {errors.email && (
-                        <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                        Password
-                      </label>
-                      <input
-                        type="password"
-                        id="password"
-                        {...register('password')}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                      />
-                      {errors.password && (
-                        <p className="mt-1 text-sm text-red-600">{errors.password.message}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label htmlFor="role" className="block text-sm font-medium text-gray-700">
-                        Role
-                      </label>
-                      <select
-                        id="role"
-                        {...register('role')}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                      >
-                        <option value="">Select role</option>
-                        {ROLES.map(role => (
-                          <option key={role.id} value={role.id}>
-                            {role.name}
-                          </option>
-                        ))}
-                      </select>
-                      {errors.role && (
-                        <p className="mt-1 text-sm text-red-600">{errors.role.message}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label htmlFor="status" className="block text-sm font-medium text-gray-700">
-                        Status
-                      </label>
-                      <select
-                        id="status"
-                        {...register('status')}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                      >
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                        <option value="suspended">Suspended</option>
-                      </select>
-                      {errors.status && (
-                        <p className="mt-1 text-sm text-red-600">{errors.status.message}</p>
-                      )}
-                    </div>
-
-                    <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
-                      <button
-                        type="submit"
-                        className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
-                      >
-                        Add User
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowAddModal(false);
-                          reset();
-                        }}
-                        className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:w-auto sm:text-sm"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Edit User Modal */}
       {showEditModal && selectedUser && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
             <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"></div>
             <div className="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
-              <div className="absolute top-0 right-0 pt-4 pr-4">
-                <button
-                  onClick={() => {
-                    setShowEditModal(false);
-                    setSelectedUser(null);
-                    reset();
-                  }}
-                  className="bg-white rounded-md text-gray-400 hover:text-gray-500"
-                >
-                  <X className="h-6 w-6" />
-                </button>
-              </div>
               <div className="sm:flex sm:items-start">
                 <div className="mt-3 text-center sm:mt-0 sm:text-left w-full">
                   <h3 className="text-lg leading-6 font-medium text-gray-900">
                     Edit User
                   </h3>
-                  <form onSubmit={handleSubmit(handleEditUser)} className="mt-6 space-y-6">
-                    <div className="grid grid-cols-2 gap-4">
+                  <div className="mt-2">
+                    <form onSubmit={handleSubmit(handleEditUser)} className="space-y-4">
                       <div>
                         <label htmlFor="firstName" className="block text-sm font-medium text-gray-700">
                           First Name
                         </label>
                         <input
                           type="text"
-                          id="firstName"
                           {...register('firstName')}
                           className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         />
@@ -752,13 +689,13 @@ const UserManagement = () => {
                           <p className="mt-1 text-sm text-red-600">{errors.firstName.message}</p>
                         )}
                       </div>
+
                       <div>
                         <label htmlFor="lastName" className="block text-sm font-medium text-gray-700">
                           Last Name
                         </label>
                         <input
                           type="text"
-                          id="lastName"
                           {...register('lastName')}
                           className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         />
@@ -766,79 +703,136 @@ const UserManagement = () => {
                           <p className="mt-1 text-sm text-red-600">{errors.lastName.message}</p>
                         )}
                       </div>
-                    </div>
 
-                    <div>
-                      <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                        Email
-                      </label>
-                      <input
-                        type="email"
-                        id="email"
-                        {...register('email')}
-                        disabled
-                        className="mt-1 block w-full rounded-md border-gray-300 bg-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                      />
-                    </div>
+                      <div>
+                        <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+                          Email
+                        </label>
+                        <input
+                          type="email"
+                          {...register('email')}
+                          disabled
+                          className="mt-1 block w-full rounded-md border-gray-300 bg-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        />
+                      </div>
 
-                    <div>
-                      <label htmlFor="role" className="block text-sm font-medium text-gray-700">
-                        Role
-                      </label>
-                      <select
-                        id="role"
-                        {...register('role')}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                      >
-                        {ROLES.map(role => (
-                          <option key={role.id} value={role.id}>
-                            {role.name}
-                          </option>
-                        ))}
-                      </select>
-                      {errors.role && (
-                        <p className="mt-1 text-sm text-red-600">{errors.role.message}</p>
+                      <div>
+                        <label htmlFor="role" className="block text-sm font-medium text-gray-700">
+                          Role
+                        </label>
+                        <select
+                          {...register('role')}
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        >
+                          {ROLES.map(role => (
+                            <option key={role.id} value={role.id}>
+                              {role.name}
+                            </option>
+                          ))}
+                        </select>
+                        {errors.role && (
+                          <p className="mt-1 text-sm text-red-600">{errors.role.message}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label htmlFor="status" className="block text-sm font-medium text-gray-700">
+                          Status
+                        </label>
+                        <select
+                          {...register('status')}
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        >
+                          <option value="active">Active</option>
+                          <option value="inactive">Inactive</option>
+                          <option value="suspended">Suspended</option>
+                        </select>
+                        {errors.status && (
+                          <p className="mt-1 text-sm text-red-600">{errors.status.message}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label htmlFor="department" className="block text-sm font-medium text-gray-700">
+                          Department
+                        </label>
+                        <input
+                          type="text"
+                          {...register('department')}
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="title" className="block text-sm font-medium text-gray-700">
+                          Title
+                        </label>
+                        <input
+                          type="text"
+                          {...register('title')}
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          {...register('isTechnician')}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor="isTechnician" className="ml-2 block text-sm text-gray-900">
+                          Register as Technician
+                        </label>
+                      </div>
+
+                      {isTechnician && (
+                        <div className="space-y-4 border-t border-gray-200 pt-4 mt-4">
+                          <div>
+                            <label htmlFor="jobTitle" className="block text-sm font-medium text-gray-700">
+                              Job Title
+                            </label>
+                            <input
+                              type="text"
+                              {...register('jobTitle')}
+                              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label htmlFor="hourlyRate" className="block text-sm font-medium text-gray-700">
+                              Hourly Rate
+                            </label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              {...register('hourlyRate')}
+                              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            />
+                          </div>
+                        </div>
                       )}
-                    </div>
 
-                    <div>
-                      <label htmlFor="status" className="block text-sm font-medium text-gray-700">
-                        Status
-                      </label>
-                      <select
-                        id="status"
-                        {...register('status')}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                      >
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                        <option value="suspended">Suspended</option>
-                      </select>
-                      {errors.status && (
-                        <p className="mt-1 text-sm text-red-600">{errors.status.message}</p>
-                      )}
-                    </div>
-
-                    <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
-                      <button
-                        type="submit"
-                        className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
-                      >
-                        Save Changes
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowEditModal(false);
-                          setSelectedUser(null);
-                          reset();
-                        }}
-                        className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:w-auto sm:text-sm"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
+                      <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+                        <button
+                          type="submit"
+                          className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
+                        >
+                          Save Changes
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowEditModal(false);
+                            setSelectedUser(null);
+                            reset();
+                          }}
+                          className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:w-auto sm:text-sm"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  </div>
                 </div>
               </div>
             </div>
@@ -846,7 +840,7 @@ const UserManagement = () => {
         </div>
       )}
 
-      {/* Delete User Modal */}
+      {/* Delete Confirmation Modal */}
       {showDeleteModal && selectedUser && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">

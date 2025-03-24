@@ -34,6 +34,14 @@ interface Vehicle {
   type: string;
 }
 
+interface CalendarEvent {
+  id: string;
+  title: string;
+  start: Date;
+  end: Date;
+  resource: VehicleMaintenanceSchedule;
+}
+
 const locales = {
   'en-US': enUS,
 };
@@ -74,6 +82,7 @@ const Maintenance = () => {
   const [error, setError] = useState<string | null>(null);
   const [showTemplateForm, setShowTemplateForm] = useState(false);
   const [showAssignForm, setShowAssignForm] = useState(false);
+  const [selectedSchedule, setSelectedSchedule] = useState<VehicleMaintenanceSchedule | null>(null);
   const { isAuthenticated, isLoading } = useAuth();
   const [templateFormData, setTemplateFormData] = useState({
     name: '',
@@ -102,7 +111,6 @@ const Maintenance = () => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('No user found');
 
-        // Get user's company
         const { data: company } = await supabase
           .from('companies')
           .select('id')
@@ -110,16 +118,6 @@ const Maintenance = () => {
           .single();
 
         if (!company) throw new Error('No company found');
-
-        // Fetch vehicles
-        const { data: vehiclesData, error: vehiclesError } = await supabase
-          .from('vehicles')
-          .select('id, name, type')
-          .eq('company_id', company.id)
-          .neq('status', 'Deleted');
-
-        if (vehiclesError) throw vehiclesError;
-        setVehicles(vehiclesData || []);
 
         // Fetch maintenance templates
         const { data: templatesData, error: templatesError } = await supabase
@@ -157,6 +155,16 @@ const Maintenance = () => {
         if (schedulesError) throw schedulesError;
         setSchedules(schedulesData || []);
 
+        // Fetch vehicles
+        const { data: vehiclesData, error: vehiclesError } = await supabase
+          .from('vehicles')
+          .select('id, name, type')
+          .eq('company_id', company.id)
+          .neq('status', 'Deleted');
+
+        if (vehiclesError) throw vehiclesError;
+        setVehicles(vehiclesData || []);
+
       } catch (err: any) {
         console.error('Error:', err);
         setError(err.message);
@@ -169,6 +177,26 @@ const Maintenance = () => {
       fetchData();
     }
   }, [isAuthenticated, isLoading]);
+
+  const handleEventClick = (event: CalendarEvent) => {
+    setSelectedSchedule(event.resource);
+    setActiveTab('schedules');
+    
+    // Pre-fill the assign form with the schedule data
+    setAssignFormData({
+      vehicle_id: event.resource.vehicle_id,
+      template_id: event.resource.template_id,
+      next_due: new Date(event.resource.next_due).toISOString().split('T')[0]
+    });
+  };
+
+  const calendarEvents = schedules.map(schedule => ({
+    id: schedule.id,
+    title: `${schedule.vehicle.name} - ${schedule.template.name}`,
+    start: new Date(schedule.next_due),
+    end: new Date(schedule.next_due),
+    resource: schedule,
+  }));
 
   const handleTemplateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -318,14 +346,6 @@ const Maintenance = () => {
     }
   };
 
-  const calendarEvents = schedules.map(schedule => ({
-    id: schedule.id,
-    title: `${schedule.vehicle.name} - ${schedule.template.name}`,
-    start: new Date(schedule.next_due),
-    end: new Date(schedule.next_due),
-    resource: schedule,
-  }));
-
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -340,7 +360,7 @@ const Maintenance = () => {
         <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
           <p className="text-sm text-blue-800">
             👋 Welcome to the demo! You're viewing sample maintenance data. 
-            <a href="/auth" className="ml-2 font-medium underline">Sign in</a> to manage your own maintenance schedules.
+            <a href="/auth" className="ml-2 font-medium underline">Sign in</a> to manage maintenance schedules.
           </p>
         </div>
       )}
@@ -418,6 +438,7 @@ const Maintenance = () => {
                 endAccessor="end"
                 style={{ height: '100%' }}
                 views={['month', 'week', 'day']}
+                onSelectEvent={handleEventClick}
               />
             </div>
           ) : activeTab === 'templates' ? (

@@ -8,8 +8,11 @@ import Vehicles from './pages/Vehicles';
 import AddVehicle from './pages/AddVehicle';
 import EditVehicle from './pages/EditVehicle';
 import Equipment from './pages/Equipment';
+import Inventory from './pages/Inventory';
 import Maintenance from './pages/Maintenance';
-import Operators from './pages/Operators';
+import WorkOrders from './pages/WorkOrders';
+import AddWorkOrder from './pages/AddWorkOrder';
+import EditWorkOrder from './pages/EditWorkOrder';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Pricing from './pages/Pricing';
@@ -34,8 +37,11 @@ function App() {
           <Route path="vehicles/add" element={<AddVehicle />} />
           <Route path="vehicles/edit/:id" element={<EditVehicle />} />
           <Route path="equipment" element={<Equipment />} />
+          <Route path="inventory" element={<Inventory />} />
           <Route path="maintenance" element={<Maintenance />} />
-          <Route path="operators" element={<Operators />} />
+          <Route path="workorders" element={<WorkOrders />} />
+          <Route path="workorders/add" element={<AddWorkOrder />} />
+          <Route path="workorders/edit/:id" element={<EditWorkOrder />} />
           <Route path="reports" element={<Reports />} />
           <Route path="settings" element={<Settings />} />
         </Route>
