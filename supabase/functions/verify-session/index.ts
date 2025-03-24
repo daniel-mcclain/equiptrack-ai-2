@@ -103,8 +103,8 @@ serve(async (req: Request) => {
     logger.debug('Parsed request body', { requestId, body: requestBody });
 
     const { sessionId } = requestBody;
-    logger.debug('requestBody',{requestBody});
-    logger.debug('requestBody.sessionID'{requestBody.sessionId}]);
+    logger.info('requestBody',{requestBody});
+    logger.info('requestBody.sessionID',{requestBody.sessionId}]);
 
     if (!sessionId) {
       logger.error('Missing sessionId parameter', { requestId });
