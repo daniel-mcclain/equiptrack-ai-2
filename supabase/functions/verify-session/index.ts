@@ -47,14 +47,13 @@ const logger = {
   }
 };
 
-// Updated subscription tier mapping
 const SUBSCRIPTION_TIER_MAP: Record<string, string> = {
-  'Standard - 50': 'standard',
-  'Standard': 'standard',
+  'starter': 'starter',
+  'standard': 'standard',
+  'professional': 'professional',
   'Starter - 10': 'starter',
-  'Starter': 'starter',
-  'Professional - 250': 'professional',
-  'Professional': 'professional'
+  'Standard - 50': 'standard',
+  'Professional - 250': 'professional'
 };
 
 async function updateCompanySubscription(
@@ -276,31 +275,30 @@ serve(async (req: Request) => {
       customerId: session.customer
     });
 
-    // Get subscription tier from the subscription data
+    // Get subscription tier from the price lookup key or subscription item name
     const subscriptionItem = subscription.items.data[0];
     const priceId = subscriptionItem.price.id;
+    const lookupKey = subscriptionItem.price.lookup_key;
+    const productName = subscriptionItem.price.product as string;
     
-    // Get the product name/description
-    const { data: product } = await stripe.products.retrieve(subscriptionItem.price.product as string);
-    const productName = product.name;
+    // Map subscription tier using lookup key, product name, or fallback
+    let subscriptionTier = 'starter'; // Default fallback
     
-    // Map subscription tier using product name
-    let subscriptionTier = SUBSCRIPTION_TIER_MAP[productName];
-    
-    if (!subscriptionTier) {
-      logger.error('Unknown subscription tier', { 
-        requestId,
-        productName,
-        fallback: 'starter'
-      });
-      subscriptionTier = 'starter'; // Fallback
+    if (lookupKey && SUBSCRIPTION_TIER_MAP[lookupKey]) {
+      subscriptionTier = SUBSCRIPTION_TIER_MAP[lookupKey];
+    } else if (productName && SUBSCRIPTION_TIER_MAP[productName]) {
+      subscriptionTier = SUBSCRIPTION_TIER_MAP[productName];
+    } else if (requestBody.subscription && SUBSCRIPTION_TIER_MAP[requestBody.subscription]) {
+      subscriptionTier = SUBSCRIPTION_TIER_MAP[requestBody.subscription];
     }
 
     logger.debug('Mapped subscription tier', {
       requestId,
       priceId,
+      lookupKey,
       productName,
-      subscriptionTier
+      subscriptionTier,
+      originalSubscription: requestBody.subscription
     });
 
     // Update subscription in database
