@@ -48,9 +48,6 @@ const logger = {
 };
 
 const SUBSCRIPTION_TIER_MAP: Record<string, string> = {
-  'price_starter': 'starter',
-  'price_standard': 'standard',
-  'price_professional': 'professional',
   'starter': 'starter',
   'standard': 'standard',
   'professional': 'professional',
@@ -144,14 +141,6 @@ serve(async (req: Request) => {
   }
 
   try {
-    const stripeKey = Deno.env.get('STRIPE_SECRET_KEY') || '';
-    logger.debug('Using Stripe key', {
-      requestId,
-      keyPrefix: stripeKey.substring(0, 7),
-      keyLength: stripeKey.length,
-      isTest: stripeKey.startsWith('sk_test_')
-    });
-
     let requestBody;
     try {
       requestBody = await req.json();
@@ -286,15 +275,19 @@ serve(async (req: Request) => {
       customerId: session.customer
     });
 
-    // Get price details
-    const priceId = subscription.items.data[0].price.id;
-    const lookupKey = subscription.items.data[0].price.lookup_key;
+    // Get subscription tier from the price lookup key or subscription item name
+    const subscriptionItem = subscription.items.data[0];
+    const priceId = subscriptionItem.price.id;
+    const lookupKey = subscriptionItem.price.lookup_key;
+    const productName = subscriptionItem.price.product as string;
     
-    // Map subscription tier using lookup key or fallback to starter
+    // Map subscription tier using lookup key, product name, or fallback
     let subscriptionTier = 'starter'; // Default fallback
     
     if (lookupKey && SUBSCRIPTION_TIER_MAP[lookupKey]) {
       subscriptionTier = SUBSCRIPTION_TIER_MAP[lookupKey];
+    } else if (productName && SUBSCRIPTION_TIER_MAP[productName]) {
+      subscriptionTier = SUBSCRIPTION_TIER_MAP[productName];
     } else if (requestBody.subscription && SUBSCRIPTION_TIER_MAP[requestBody.subscription]) {
       subscriptionTier = SUBSCRIPTION_TIER_MAP[requestBody.subscription];
     }
@@ -303,6 +296,7 @@ serve(async (req: Request) => {
       requestId,
       priceId,
       lookupKey,
+      productName,
       subscriptionTier,
       originalSubscription: requestBody.subscription
     });
@@ -327,7 +321,7 @@ serve(async (req: Request) => {
       subscription_id: subscription?.id,
       customer_id: session.customer,
       plan: subscriptionTier,
-      price_id: subscription.items.data[0].price.id,
+      price_id: priceId,
       status: subscription?.status,
       current_period_end: subscription?.current_period_end 
         ? new Date(subscription.current_period_end * 1000).toISOString()
