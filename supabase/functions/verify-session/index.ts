@@ -102,7 +102,7 @@ serve(async (req: Request) => {
 
     logger.debug('Parsed request body', { requestId, body: requestBody });
 
-    const { sessionId } = requestBody;
+    const { sessionId } = requestBody.data?.sessionId;
     logger.info('requestBody',{requestBody});
 
     if (!sessionId) {
