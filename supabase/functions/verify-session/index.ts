@@ -47,6 +47,18 @@ const logger = {
   }
 };
 
+const SUBSCRIPTION_TIER_MAP: Record<string, string> = {
+  'price_starter': 'starter',
+  'price_standard': 'standard',
+  'price_professional': 'professional',
+  'starter': 'starter',
+  'standard': 'standard',
+  'professional': 'professional',
+  'Starter - 10': 'starter',
+  'Standard - 50': 'standard',
+  'Professional - 250': 'professional'
+};
+
 async function updateCompanySubscription(
   companyId: string,
   subscriptionData: {
@@ -274,17 +286,33 @@ serve(async (req: Request) => {
       customerId: session.customer
     });
 
-    // Map subscription tier from price lookup key or product name
-    const subscriptionTier = subscription.items.data[0].price.lookup_key || 
-                           subscription.items.data[0].price.product.toString() || 
-                           'starter';
+    // Get price details
+    const priceId = subscription.items.data[0].price.id;
+    const lookupKey = subscription.items.data[0].price.lookup_key;
+    
+    // Map subscription tier using lookup key or fallback to starter
+    let subscriptionTier = 'starter'; // Default fallback
+    
+    if (lookupKey && SUBSCRIPTION_TIER_MAP[lookupKey]) {
+      subscriptionTier = SUBSCRIPTION_TIER_MAP[lookupKey];
+    } else if (requestBody.subscription && SUBSCRIPTION_TIER_MAP[requestBody.subscription]) {
+      subscriptionTier = SUBSCRIPTION_TIER_MAP[requestBody.subscription];
+    }
+
+    logger.debug('Mapped subscription tier', {
+      requestId,
+      priceId,
+      lookupKey,
+      subscriptionTier,
+      originalSubscription: requestBody.subscription
+    });
 
     // Update subscription in database
     await updateCompanySubscription(companyId, {
       subscription_tier: subscriptionTier,
       stripe_customer_id: session.customer as string,
       stripe_subscription_id: subscription.id,
-      stripe_price_id: subscription.items.data[0].price.id,
+      stripe_price_id: priceId,
       current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
       cancel_at_period_end: subscription.cancel_at_period_end,
       is_trial: subscription.status === 'trialing',
