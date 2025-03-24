@@ -104,7 +104,6 @@ serve(async (req: Request) => {
 
     const { sessionId } = requestBody;
     logger.info('requestBody',{requestBody});
-    logger.info('requestBody.sessionID',{requestBody.sessionId}]);
 
     if (!sessionId) {
       logger.error('Missing sessionId parameter', { requestId });
@@ -126,11 +125,10 @@ serve(async (req: Request) => {
     logger.info('Retrieving Stripe checkout session', { requestId, sessionId });
 
     // Retrieve the checkout session with expanded subscription
+    logger.info('sessionid->',{sessionId})
     let session;
     try {
-      session = await stripe.checkout.sessions.retrieve(sessionId, {
-        expand: ['subscription', 'subscription.latest_invoice']
-      });
+      session = await stripe.checkout.sessions.retrieve(sessionId);
     } catch (err) {
       logger.error('Failed to retrieve Stripe session', {
         requestId,
