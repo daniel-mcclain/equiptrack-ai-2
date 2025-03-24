@@ -7,8 +7,14 @@ interface LocationState {
   newTier: string;
   price: string;
   isUpgrade: boolean;
-  paymentLink?: string; // Add optional payment link
+  paymentLink?: string;
 }
+
+const PAYMENT_LINKS = {
+  starter: 'https://buy.stripe.com/6oE5o23re2035zi8ww', // Production link
+  standard: 'https://buy.stripe.com/6oE17Me5S8or7Hq146',
+  professional: 'https://buy.stripe.com/eVa5o2f9WfQT0eY9AD'
+};
 
 const SubscriptionForm = () => {
   const navigate = useNavigate();
@@ -30,9 +36,11 @@ const SubscriptionForm = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (paymentLink) {
-      // Redirect to external payment link if provided
-      window.location.href = paymentLink;
+    // Use provided payment link or fallback to PAYMENT_LINKS mapping
+    const stripeUrl = paymentLink || PAYMENT_LINKS[newTier as keyof typeof PAYMENT_LINKS];
+    
+    if (stripeUrl) {
+      window.location.href = stripeUrl;
     } else {
       // Fallback behavior - navigate to settings
       navigate('/app/settings');
@@ -118,7 +126,7 @@ const SubscriptionForm = () => {
                   type="submit"
                   className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                 >
-                  {`Continue to Payment`}
+                  Continue to Payment
                 </button>
               </form>
             </div>
