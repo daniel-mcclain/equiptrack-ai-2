@@ -10,7 +10,7 @@ const DashboardCard = ({ icon: Icon, title, value, change, color }: any) => (
       <div>
         <p className="text-gray-500 text-sm font-medium">{title}</p>
         <h3 className="text-2xl font-bold mt-1">{value}</h3>
-        {change && (
+        {change !== undefined && (
           <p className={`text-sm ${color} mt-2 flex items-center`}>
             <TrendingUp size={16} className="mr-1" />
             {change > 0 ? '+' : ''}{change}% from last month
@@ -28,12 +28,32 @@ const Dashboard = () => {
   const { isAuthenticated, isLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [stats, setStats] = useState(DEMO_STATS);
-  const [recentActivity, setRecentActivity] = useState(DEMO_ACTIVITY);
+  const [stats, setStats] = useState({
+    totalVehicles: 0,
+    activeVehicles: 0,
+    maintenanceDue: 0,
+    uptime: 0,
+    totalVehiclesChange: 0,
+    activeVehiclesChange: 0,
+    maintenanceDueChange: 0,
+    uptimeChange: 0
+  });
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
       if (!isAuthenticated) {
+        setStats({
+          totalVehicles: DEMO_STATS.totalVehicles,
+          activeVehicles: DEMO_STATS.activeVehicles,
+          maintenanceDue: DEMO_STATS.maintenanceDue,
+          uptime: DEMO_STATS.uptime,
+          totalVehiclesChange: 5.2,
+          activeVehiclesChange: 2.1,
+          maintenanceDueChange: -12.5,
+          uptimeChange: 0.8
+        });
+        setRecentActivity(DEMO_ACTIVITY);
         setLoading(false);
         return;
       }
@@ -51,18 +71,108 @@ const Dashboard = () => {
 
         if (!company) return;
 
-        // Get vehicles count
-        const { count: vehiclesCount } = await supabase
+        // Calculate date ranges
+        const now = new Date();
+        const lastMonth = new Date();
+        lastMonth.setMonth(lastMonth.getMonth() - 1);
+        const maintenanceDueDate = new Date();
+        maintenanceDueDate.setDate(maintenanceDueDate.getDate() + 7); // Due within next 7 days
+
+        // Get current counts
+        const { count: currentTotal } = await supabase
           .from('vehicles')
           .select('*', { count: 'exact' })
           .eq('company_id', company.id);
 
-        // Get maintenance due count
-        const { count: maintenanceCount } = await supabase
+        const { count: currentActive } = await supabase
           .from('vehicles')
           .select('*', { count: 'exact' })
           .eq('company_id', company.id)
-          .lt('last_maintenance', new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString());
+          .eq('status', 'Active');
+
+        const { count: currentMaintenance } = await supabase
+          .from('vehicles')
+          .select('*', { count: 'exact' })
+          .eq('company_id', company.id)
+          .lt('next_maintenance', maintenanceDueDate.toISOString());
+
+        // Get last month's counts
+        const { count: lastMonthTotal } = await supabase
+          .from('vehicles')
+          .select('*', { count: 'exact' })
+          .eq('company_id', company.id)
+          .lte('created_at', lastMonth.toISOString());
+
+        const { count: lastMonthActive } = await supabase
+          .from('vehicles')
+          .select('*', { count: 'exact' })
+          .eq('company_id', company.id)
+          .eq('status', 'Active')
+          .lte('created_at', lastMonth.toISOString());
+
+        const { count: lastMonthMaintenance } = await supabase
+          .from('vehicles')
+          .select('*', { count: 'exact' })
+          .eq('company_id', company.id)
+          .lt('next_maintenance', lastMonth.toISOString());
+
+        // Calculate percentage changes
+        const calculateChange = (current: number, previous: number) => {
+          return previous ? Math.round(((current - previous) / previous) * 1000) / 10 : 0;
+        };
+
+        // Calculate uptime based on vehicle statuses
+        const { count: totalVehicles } = await supabase
+          .from('vehicles')
+          .select('*', { count: 'exact' })
+          .eq('company_id', company.id);
+
+        const { count: outOfServiceVehicles } = await supabase
+          .from('vehicles')
+          .select('*', { count: 'exact' })
+          .eq('company_id', company.id)
+          .in('status', ['Maintenance', 'Out of Service']);
+
+        const currentUptime = totalVehicles ? 
+          Math.round(((totalVehicles - outOfServiceVehicles) / totalVehicles) * 1000) / 10 : 
+          100;
+
+        // Get last month's uptime from technical_metrics if available
+        const { data: lastMonthUptimeData } = await supabase
+          .from('technical_metrics')
+          .select('metric_value')
+          .eq('company_id', company.id)
+          .eq('metric_type', 'uptime')
+          .eq('metric_name', 'fleet_uptime')
+          .eq('component', 'fleet')  // Add component field
+          .lte('timestamp', lastMonth.toISOString())
+          .order('timestamp', { ascending: false })
+          .limit(1);
+
+        const lastMonthUptime = lastMonthUptimeData?.[0]?.metric_value || currentUptime;
+
+        // Store current uptime for next month's comparison
+        await supabase
+          .from('technical_metrics')
+          .insert([{
+            company_id: company.id,
+            metric_type: 'uptime',
+            metric_name: 'fleet_uptime',
+            metric_value: currentUptime,
+            unit: 'percentage',
+            component: 'fleet'  // Add component field
+          }]);
+
+        setStats({
+          totalVehicles: currentTotal || 0,
+          activeVehicles: currentActive || 0,
+          maintenanceDue: currentMaintenance || 0,
+          uptime: currentUptime,
+          totalVehiclesChange: calculateChange(currentTotal || 0, lastMonthTotal || 0),
+          activeVehiclesChange: calculateChange(currentActive || 0, lastMonthActive || 0),
+          maintenanceDueChange: calculateChange(currentMaintenance || 0, lastMonthMaintenance || 0),
+          uptimeChange: calculateChange(currentUptime, lastMonthUptime)
+        });
 
         // Get recent activity
         const { data: activity } = await supabase
@@ -77,12 +187,6 @@ const Dashboard = () => {
           .eq('company_id', company.id)
           .order('last_maintenance', { ascending: false })
           .limit(4);
-
-        setStats({
-          ...DEMO_STATS,
-          totalVehicles: vehiclesCount || 0,
-          maintenanceDue: maintenanceCount || 0,
-        });
 
         setRecentActivity(activity || []);
 
@@ -141,29 +245,29 @@ const Dashboard = () => {
           icon={Truck}
           title="Total Vehicles"
           value={stats.totalVehicles}
-          change={5.2}
-          color="text-green-500"
+          change={stats.totalVehiclesChange}
+          color={stats.totalVehiclesChange >= 0 ? "text-green-500" : "text-red-500"}
         />
         <DashboardCard
           icon={Tools}
           title="Active Vehicles"
           value={stats.activeVehicles}
-          change={2.1}
-          color="text-green-500"
+          change={stats.activeVehiclesChange}
+          color={stats.activeVehiclesChange >= 0 ? "text-green-500" : "text-red-500"}
         />
         <DashboardCard
           icon={AlertTriangle}
           title="Maintenance Due"
           value={stats.maintenanceDue}
-          change={-12.5}
-          color="text-red-500"
+          change={stats.maintenanceDueChange}
+          color={stats.maintenanceDueChange <= 0 ? "text-green-500" : "text-red-500"}
         />
         <DashboardCard
           icon={Clock}
           title="Average Uptime"
           value={`${stats.uptime}%`}
-          change={0.8}
-          color="text-green-500"
+          change={stats.uptimeChange}
+          color={stats.uptimeChange >= 0 ? "text-green-500" : "text-red-500"}
         />
       </div>
 
@@ -207,9 +311,16 @@ const Dashboard = () => {
               </div>
               <div className="flex items-center space-x-3">
                 <div className="w-48 bg-gray-200 rounded-full h-2.5">
-                  <div className="bg-green-500 h-2.5 rounded-full" style={{ width: '85%' }}></div>
+                  <div 
+                    className="bg-green-500 h-2.5 rounded-full" 
+                    style={{ 
+                      width: `${isAuthenticated ? stats.uptime : 85}%` 
+                    }}
+                  />
                 </div>
-                <span className="text-sm font-medium">85%</span>
+                <span className="text-sm font-medium">
+                  {isAuthenticated ? `${stats.uptime}%` : '85%'}
+                </span>
               </div>
             </div>
             <div className="flex justify-between items-center">
@@ -221,9 +332,19 @@ const Dashboard = () => {
               </div>
               <div className="flex items-center space-x-3">
                 <div className="w-48 bg-gray-200 rounded-full h-2.5">
-                  <div className="bg-yellow-500 h-2.5 rounded-full" style={{ width: '10%' }}></div>
+                  <div 
+                    className="bg-yellow-500 h-2.5 rounded-full" 
+                    style={{ 
+                      width: `${isAuthenticated ? (stats.maintenanceDue / stats.totalVehicles) * 100 : 10}%` 
+                    }}
+                  />
                 </div>
-                <span className="text-sm font-medium">10%</span>
+                <span className="text-sm font-medium">
+                  {isAuthenticated 
+                    ? `${Math.round((stats.maintenanceDue / stats.totalVehicles) * 100)}%`
+                    : '10%'
+                  }
+                </span>
               </div>
             </div>
             <div className="flex justify-between items-center">
@@ -235,9 +356,16 @@ const Dashboard = () => {
               </div>
               <div className="flex items-center space-x-3">
                 <div className="w-48 bg-gray-200 rounded-full h-2.5">
-                  <div className="bg-red-500 h-2.5 rounded-full" style={{ width: '5%' }}></div>
+                  <div 
+                    className="bg-red-500 h-2.5 rounded-full" 
+                    style={{ 
+                      width: `${isAuthenticated ? 100 - stats.uptime : 5}%` 
+                    }}
+                  />
                 </div>
-                <span className="text-sm font-medium">5%</span>
+                <span className="text-sm font-medium">
+                  {isAuthenticated ? `${100 - stats.uptime}%` : '5%'}
+                </span>
               </div>
             </div>
           </div>
