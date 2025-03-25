@@ -30,6 +30,7 @@ const CompanyManagement = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [teamCount, setTeamCount] = useState(0);
+  const [activeVehicles, setActiveVehicles] = useState(0);
 
   useEffect(() => {
     const fetchCompanyData = async () => {
@@ -37,6 +38,7 @@ const CompanyManagement = () => {
         if (!isAuthenticated) {
           setCompany(DEMO_COMPANY);
           setTeamCount(DEMO_TEAM_MEMBERS.length);
+          setActiveVehicles(DEMO_COMPANY_STATS.activeVehicles);
           setLoading(false);
           return;
         }
@@ -58,13 +60,23 @@ const CompanyManagement = () => {
         setCompany(companies);
 
         // Fetch team members count
-        const { count, error: teamError } = await supabase
+        const { count: teamCount, error: teamError } = await supabase
           .from('user_companies')
           .select('*', { count: 'exact' })
           .eq('company_id', companies.id);
 
         if (teamError) throw teamError;
-        setTeamCount(count || 0);
+        setTeamCount(teamCount || 0);
+
+        // Fetch active vehicles count
+        const { count: vehicleCount, error: vehicleError } = await supabase
+          .from('vehicles')
+          .select('*', { count: 'exact' })
+          .eq('company_id', companies.id)
+          .eq('status', 'Active');
+
+        if (vehicleError) throw vehicleError;
+        setActiveVehicles(vehicleCount || 0);
 
       } catch (err: any) {
         console.error('Error fetching company data:', err);
@@ -144,8 +156,8 @@ const CompanyManagement = () => {
               <Building2 className="h-6 w-6 text-blue-600" />
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Fleet Size</p>
-              <p className="text-2xl font-semibold text-gray-900">{company.fleet_size}</p>
+              <p className="text-sm font-medium text-gray-500">Active Vehicles</p>
+              <p className="text-2xl font-semibold text-gray-900">{activeVehicles}</p>
             </div>
           </div>
         </div>
