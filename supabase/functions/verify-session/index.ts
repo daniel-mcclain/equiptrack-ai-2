@@ -283,7 +283,7 @@ serve(async (req: Request) => {
     
     // Map subscription tier using lookup key, product name, or fallback
     let subscriptionTier = 'starter'; // Default fallback
-    
+    logger.debug('subscriptionINFO:',{subscriptionItem});
     if (lookupKey && SUBSCRIPTION_TIER_MAP[lookupKey]) {
       subscriptionTier = SUBSCRIPTION_TIER_MAP[lookupKey];
     } else if (productName && SUBSCRIPTION_TIER_MAP[productName]) {
