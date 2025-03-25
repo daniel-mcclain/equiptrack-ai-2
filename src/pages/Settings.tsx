@@ -37,52 +37,59 @@ const Settings = () => {
   const [showAddUserModal, setShowAddUserModal] = useState(false);
 
   useEffect(() => {
-    const fetchPermissions = async () => {
+    const initializeSettings = async () => {
       if (!isAuthenticated) {
         return;
       }
 
       setLoading(true);
       try {
+        // Call create_admin_user function
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('No user found');
 
-        const { data: company } = await supabase
-          .from('companies')
-          .select('id')
-          .eq('owner_id', user.id)
-          .single();
+        const { data, error: fnError } = await supabase.rpc('create_admin_user');
+        if (fnError) throw fnError;
 
-        if (!company) throw new Error('No company found');
+        // Fetch permissions if on security tab
+        if (activeTab === 'security') {
+          const { data: company } = await supabase
+            .from('companies')
+            .select('id')
+            .eq('owner_id', user.id)
+            .single();
 
-        const { data: permissionsData, error: permissionsError } = await supabase
-          .from('company_settings')
-          .select('*')
-          .eq('company_id', company.id)
-          .eq('setting_type', 'permission')
-          .eq('is_active', true);
+          if (!company) throw new Error('No company found');
 
-        if (permissionsError) throw permissionsError;
-        
-        const transformedPermissions = permissionsData?.map(setting => ({
-          id: setting.id,
-          role: setting.value.split(':')[0],
-          resource: setting.value.split(':')[1],
-          action: setting.value.split(':')[2],
-          description: setting.description
-        })) || [];
+          const { data: permissionsData, error: permissionsError } = await supabase
+            .from('company_settings')
+            .select('*')
+            .eq('company_id', company.id)
+            .eq('setting_type', 'permission')
+            .eq('is_active', true);
 
-        setPermissions(transformedPermissions);
+          if (permissionsError) throw permissionsError;
+          
+          const transformedPermissions = permissionsData?.map(setting => ({
+            id: setting.id,
+            role: setting.value.split(':')[0],
+            resource: setting.value.split(':')[1],
+            action: setting.value.split(':')[2],
+            description: setting.description
+          })) || [];
+
+          setPermissions(transformedPermissions);
+        }
       } catch (err: any) {
-        console.error('Error fetching permissions:', err);
+        console.error('Error initializing settings:', err);
         setError(err.message);
       } finally {
         setLoading(false);
       }
     };
 
-    if (!isLoading && activeTab === 'security') {
-      fetchPermissions();
+    if (!isLoading) {
+      initializeSettings();
     }
   }, [activeTab, isAuthenticated, isLoading]);
 
