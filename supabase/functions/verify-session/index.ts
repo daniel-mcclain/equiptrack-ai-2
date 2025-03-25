@@ -47,6 +47,14 @@ const logger = {
   }
 };
 
+// Map subscription tiers to their vehicle limits
+const SUBSCRIPTION_LIMITS = {
+  'test_drive': 3,
+  'starter': 10,
+  'standard': 50,
+  'professional': 250
+};
+
 const SUBSCRIPTION_TIER_MAP: Record<string, string> = {
   'starter': 'starter',
   'standard': 'standard',
@@ -72,6 +80,9 @@ async function updateCompanySubscription(
   logger.info('Updating company subscription', { companyId, subscriptionData });
 
   try {
+    // Get the vehicle limit for the new subscription tier
+    const maxVehicles = SUBSCRIPTION_LIMITS[subscriptionData.subscription_tier as keyof typeof SUBSCRIPTION_LIMITS] || 3;
+
     const { error } = await supabase
       .from('companies')
       .update({
@@ -83,6 +94,7 @@ async function updateCompanySubscription(
         cancel_at_period_end: subscriptionData.cancel_at_period_end,
         is_trial: subscriptionData.is_trial,
         trial_ends_at: subscriptionData.trial_ends_at,
+        max_vehicles: maxVehicles, // Update the vehicle limit based on the new tier
         updated_at: new Date().toISOString()
       })
       .eq('id', companyId);
@@ -95,7 +107,10 @@ async function updateCompanySubscription(
       .insert([{
         company_id: companyId,
         event_type: 'subscription_updated',
-        event_data: subscriptionData,
+        event_data: {
+          ...subscriptionData,
+          max_vehicles: maxVehicles // Include the new vehicle limit in the event data
+        },
         created_at: new Date().toISOString()
       }]);
 
@@ -103,7 +118,11 @@ async function updateCompanySubscription(
       logger.error('Failed to log subscription event', { companyId, error: eventError });
     }
 
-    logger.info('Successfully updated company subscription', { companyId });
+    logger.info('Successfully updated company subscription', { 
+      companyId,
+      tier: subscriptionData.subscription_tier,
+      maxVehicles
+    });
     return true;
   } catch (error) {
     logger.error('Failed to update company subscription', { companyId, error });
@@ -282,15 +301,12 @@ serve(async (req: Request) => {
     const productName = subscriptionItem.price.product as string;
     
     // Map subscription tier using lookup key, product name, or fallback
-    let subscriptionTier = 'starter'; // Default fallback
-    subscriptionTier = requestBody.subscription
-    logger.debug('subscriptionINFO:',{subscriptionItem});
+    let subscriptionTier = requestBody.subscription || 'starter'; // Use the subscription from the request body first
+    
     if (lookupKey && SUBSCRIPTION_TIER_MAP[lookupKey]) {
       subscriptionTier = SUBSCRIPTION_TIER_MAP[lookupKey];
     } else if (productName && SUBSCRIPTION_TIER_MAP[productName]) {
       subscriptionTier = SUBSCRIPTION_TIER_MAP[productName];
-    } else if (requestBody.subscription && SUBSCRIPTION_TIER_MAP[requestBody.subscription]) {
-      subscriptionTier = SUBSCRIPTION_TIER_MAP[requestBody.subscription];
     }
 
     logger.debug('Mapped subscription tier', {
@@ -299,7 +315,8 @@ serve(async (req: Request) => {
       lookupKey,
       productName,
       subscriptionTier,
-      originalSubscription: requestBody.subscription
+      originalSubscription: requestBody.subscription,
+      maxVehicles: SUBSCRIPTION_LIMITS[subscriptionTier as keyof typeof SUBSCRIPTION_LIMITS]
     });
 
     // Update subscription in database
@@ -328,6 +345,7 @@ serve(async (req: Request) => {
         ? new Date(subscription.current_period_end * 1000).toISOString()
         : null,
       cancel_at_period_end: subscription?.cancel_at_period_end || false,
+      max_vehicles: SUBSCRIPTION_LIMITS[subscriptionTier as keyof typeof SUBSCRIPTION_LIMITS],
       requestId
     };
 
