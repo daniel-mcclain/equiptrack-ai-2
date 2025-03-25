@@ -35,24 +35,54 @@ const Settings = () => {
   const [loading, setLoading] = useState(false);
   const { isAuthenticated, isLoading } = useAuth();
   const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [initializationStatus, setInitializationStatus] = useState<{
+    initialized: boolean;
+    adminCreated: boolean;
+    error?: string;
+  }>({
+    initialized: false,
+    adminCreated: false
+  });
 
   useEffect(() => {
     const initializeSettings = async () => {
       if (!isAuthenticated) {
+        setInitializationStatus({
+          initialized: true,
+          adminCreated: false
+        });
         return;
       }
 
       setLoading(true);
-      try {
-        // Call create_admin_user_rpc function
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('No user found');
+      setError(null);
 
-        const { data, error: fnError } = await supabase.rpc('create_admin_user_rpc');
-        if (fnError) throw fnError;
+      try {
+        console.log('Initializing settings...');
+
+        // Call create_admin_user_rpc function
+        const { data: adminResult, error: adminError } = await supabase.rpc('create_admin_user_rpc');
+        
+        if (adminError) {
+          console.error('Admin creation error:', adminError);
+          throw adminError;
+        }
+
+        console.log('Admin creation result:', adminResult);
+
+        setInitializationStatus({
+          initialized: true,
+          adminCreated: adminResult?.success || false,
+          error: adminResult?.error
+        });
 
         // Fetch permissions if on security tab
         if (activeTab === 'security') {
+          console.log('Fetching security permissions...');
+
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) throw new Error('No user found');
+
           const { data: company } = await supabase
             .from('companies')
             .select('id')
@@ -78,11 +108,16 @@ const Settings = () => {
             description: setting.description
           })) || [];
 
+          console.log('Fetched permissions:', transformedPermissions);
           setPermissions(transformedPermissions);
         }
       } catch (err: any) {
         console.error('Error initializing settings:', err);
         setError(err.message);
+        setInitializationStatus(prev => ({
+          ...prev,
+          error: err.message
+        }));
       } finally {
         setLoading(false);
       }
@@ -105,6 +140,8 @@ const Settings = () => {
     );
 
     try {
+      console.log('Toggling permission:', { role, resource, action });
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('No user found');
 
@@ -125,6 +162,7 @@ const Settings = () => {
         .single();
 
       if (existingPermission) {
+        console.log('Removing permission:', existingPermission.id);
         const { error } = await supabase
           .from('company_settings')
           .update({ is_active: false })
@@ -135,6 +173,7 @@ const Settings = () => {
         setPermissions(prev => prev.filter(p => p.id !== existingPermission.id));
       } else {
         if (existingSetting) {
+          console.log('Reactivating permission:', existingSetting.id);
           const { data, error } = await supabase
             .from('company_settings')
             .update({ 
@@ -155,6 +194,7 @@ const Settings = () => {
             description: `Allows ${role} to ${action} ${resource}`
           }]);
         } else {
+          console.log('Creating new permission');
           const { data, error } = await supabase
             .from('company_settings')
             .insert([{
@@ -179,6 +219,8 @@ const Settings = () => {
           }]);
         }
       }
+
+      console.log('Permission toggle successful');
     } catch (err: any) {
       console.error('Error updating permission:', err);
       setError(err.message);
@@ -186,6 +228,7 @@ const Settings = () => {
   };
 
   const handleTabChange = (tabId: string) => {
+    console.log('Changing tab to:', tabId);
     setActiveTab(tabId);
     if (tabId === 'users') {
       setShowAddUserModal(true);
@@ -250,6 +293,14 @@ const Settings = () => {
       {error && (
         <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
           <p className="text-sm text-red-600">{error}</p>
+        </div>
+      )}
+
+      {initializationStatus.error && (
+        <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <p className="text-sm text-yellow-800">
+            Settings initialization warning: {initializationStatus.error}
+          </p>
         </div>
       )}
 
