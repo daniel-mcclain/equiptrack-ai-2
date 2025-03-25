@@ -44,11 +44,11 @@ const Settings = () => {
 
       setLoading(true);
       try {
-        // Call create_admin_user function
+        // Call create_admin_user_rpc function
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('No user found');
 
-        const { data, error: fnError } = await supabase.rpc('create_admin_user');
+        const { data, error: fnError } = await supabase.rpc('create_admin_user_rpc');
         if (fnError) throw fnError;
 
         // Fetch permissions if on security tab
