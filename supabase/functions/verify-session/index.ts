@@ -61,7 +61,10 @@ const SUBSCRIPTION_TIER_MAP: Record<string, string> = {
   'professional': 'professional',
   'Starter - 10': 'starter',
   'Standard - 50': 'standard',
-  'Professional - 250': 'professional'
+  'Professional - 250': 'professional',
+  'STARTER':'starter',
+  'STANDARD':'standard',
+  'PROFESSIONAL':'professional'
 };
 
 async function updateCompanySubscription(
@@ -301,7 +304,7 @@ serve(async (req: Request) => {
     const productName = subscriptionItem.price.product as string;
     
     // Map subscription tier using lookup key, product name, or fallback
-    let subscriptionTier = requestBody.subscription || 'starter'; // Use the subscription from the request body first
+    let subscriptionTier = SUBSCRIPTION_TIER_MAP[requestBody.subscription] || 'starter'; // Use the subscription from the request body first
     
     if (lookupKey && SUBSCRIPTION_TIER_MAP[lookupKey]) {
       subscriptionTier = SUBSCRIPTION_TIER_MAP[lookupKey];
