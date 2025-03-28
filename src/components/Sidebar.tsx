@@ -116,6 +116,7 @@ const Sidebar = () => {
         ))}
       </nav>
 
+      {/* Only render company selector if user is global admin and sidebar is open */}
       {isGlobalAdmin && isOpen && (
         <div className="px-4 py-3 border-t border-blue-500">
           <div className="flex items-center space-x-2">
