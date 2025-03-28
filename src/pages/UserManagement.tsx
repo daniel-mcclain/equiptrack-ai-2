@@ -58,7 +58,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
   const [success, setSuccess] = useState<string | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showUserModal, setShowUserModal] = useState(showAddModal);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({
@@ -66,7 +66,6 @@ const UserManagement: React.FC<UserManagementProps> = ({
     status: '',
     dateRange: '30'
   });
-  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
 
   const {
     register,
@@ -78,7 +77,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
   } = useForm<UserFormData>({
     resolver: zodResolver(userSchema),
     defaultValues: {
-      isTechnician: false
+      isTechnician: false,
+      status: 'active',
+      role: 'user'
     }
   });
 
@@ -107,13 +108,22 @@ const UserManagement: React.FC<UserManagementProps> = ({
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('No user found');
 
-        const { data: company } = await supabase
+        // Check if user has a company
+        const { data: company, error: companyError } = await supabase
           .from('companies')
           .select('id')
           .eq('owner_id', user.id)
           .single();
 
-        if (!company) throw new Error('No company found');
+        if (companyError && companyError.code !== 'PGRST116') {
+          throw companyError;
+        }
+
+        if (!company) {
+          // Redirect to company setup if no company exists
+          navigate('/setup');
+          return;
+        }
 
         const { data: usersData, error: usersError } = await supabase
           .from('users')
@@ -133,14 +143,16 @@ const UserManagement: React.FC<UserManagementProps> = ({
     };
 
     fetchUsers();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, navigate]);
 
-  // Effect to populate edit form when a user is selected
+  useEffect(() => {
+    setShowUserModal(showAddModal);
+  }, [showAddModal]);
+
   useEffect(() => {
     const fetchUserDetails = async () => {
       if (selectedUser && showEditModal) {
         try {
-          // Get technician data if exists
           const { data: techData } = await supabase
             .from('technicians')
             .select('*')
@@ -175,9 +187,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
     fetchUserDetails();
   }, [selectedUser, showEditModal, setValue]);
 
-  const handleDeleteUser = async () => {
-    if (!isAuthenticated || !selectedUser) {
-      setError('Please sign in to delete users');
+  const handleDisableUser = async (userId: string) => {
+    if (!isAuthenticated) {
+      setError('Please sign in to manage users');
       return;
     }
 
@@ -185,63 +197,37 @@ const UserManagement: React.FC<UserManagementProps> = ({
     setError(null);
 
     try {
-      // Get current user for audit log
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) throw new Error('No user found');
 
-      // Create audit log entry before deleting user
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ 
+          status: 'inactive',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId);
+
+      if (updateError) throw updateError;
+
       const { error: auditError } = await supabase
         .from('user_audit_logs')
         .insert([{
-          user_id: currentUser.id,
-          action: 'DELETE_USER',
+          user_id: userId,
+          action: 'DISABLE_USER',
           details: {
-            deleted_user_id: selectedUser.id,
-            deleted_user_email: selectedUser.email,
-            deleted_user_name: `${selectedUser.first_name} ${selectedUser.last_name}`
+            disabled_at: new Date().toISOString(),
+            disabled_by: currentUser.id
           },
           performed_by: currentUser.id
         }]);
 
       if (auditError) throw auditError;
 
-      // Delete user associations in the correct order
-      const { error: workOrdersError } = await supabase
-        .from('work_orders')
-        .update({ assigned_to: null })
-        .eq('assigned_to', selectedUser.id);
-
-      if (workOrdersError) throw workOrdersError;
-
-      const { error: techDeleteError } = await supabase
-        .from('technicians')
-        .delete()
-        .eq('user_id', selectedUser.id);
-
-      if (techDeleteError) throw techDeleteError;
-
-      const { error: userCompaniesDeleteError } = await supabase
-        .from('user_companies')
-        .delete()
-        .eq('user_id', selectedUser.id);
-
-      if (userCompaniesDeleteError) throw userCompaniesDeleteError;
-
-      // Finally delete the user
-      const { error: userDeleteError } = await supabase
-        .from('users')
-        .delete()
-        .eq('id', selectedUser.id);
-
-      if (userDeleteError) throw userDeleteError;
-
-      // Update local state
-      setUsers(prev => prev.filter(user => user.id !== selectedUser.id));
-      setShowDeleteModal(false);
-      setSelectedUser(null);
-      setSuccess('User deleted successfully');
+      setUsers(prev => prev.filter(user => user.id !== userId));
+      setSuccess('User disabled successfully');
     } catch (err: any) {
-      console.error('Error deleting user:', err);
+      console.error('Error disabling user:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -261,7 +247,6 @@ const UserManagement: React.FC<UserManagementProps> = ({
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) throw new Error('No user found');
 
-      // Update user data
       const { error: updateError } = await supabase
         .from('users')
         .update({
@@ -281,7 +266,6 @@ const UserManagement: React.FC<UserManagementProps> = ({
 
       if (updateError) throw updateError;
 
-      // Handle technician data
       if (data.isTechnician) {
         const technicianData = {
           user_id: selectedUser.id,
@@ -293,7 +277,6 @@ const UserManagement: React.FC<UserManagementProps> = ({
           updated_at: new Date().toISOString()
         };
 
-        // Check if technician record exists
         const { data: existingTech } = await supabase
           .from('technicians')
           .select('id')
@@ -301,7 +284,6 @@ const UserManagement: React.FC<UserManagementProps> = ({
           .maybeSingle();
 
         if (existingTech) {
-          // Update existing technician record
           const { error: techUpdateError } = await supabase
             .from('technicians')
             .update(technicianData)
@@ -309,7 +291,6 @@ const UserManagement: React.FC<UserManagementProps> = ({
 
           if (techUpdateError) throw techUpdateError;
         } else {
-          // Create new technician record
           const { error: techInsertError } = await supabase
             .from('technicians')
             .insert([technicianData]);
@@ -317,7 +298,6 @@ const UserManagement: React.FC<UserManagementProps> = ({
           if (techInsertError) throw techInsertError;
         }
       } else {
-        // Remove technician record if exists and checkbox is unchecked
         const { error: techDeleteError } = await supabase
           .from('technicians')
           .delete()
@@ -326,7 +306,6 @@ const UserManagement: React.FC<UserManagementProps> = ({
         if (techDeleteError) throw techDeleteError;
       }
 
-      // Create audit log for user update
       const { error: auditError } = await supabase
         .from('user_audit_logs')
         .insert([{
@@ -346,7 +325,6 @@ const UserManagement: React.FC<UserManagementProps> = ({
 
       if (auditError) throw auditError;
 
-      // Update user_companies if role changed
       if (data.role !== selectedUser.role) {
         const { error: roleUpdateError } = await supabase
           .from('user_companies')
@@ -356,7 +334,6 @@ const UserManagement: React.FC<UserManagementProps> = ({
         if (roleUpdateError) throw roleUpdateError;
       }
 
-      // Refresh users list
       const { data: updatedUsers, error: fetchError } = await supabase
         .from('users')
         .select('*')
@@ -388,11 +365,9 @@ const UserManagement: React.FC<UserManagementProps> = ({
     setError(null);
 
     try {
-      // Get current user
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('No user found');
 
-      // Get company
       const { data: company } = await supabase
         .from('companies')
         .select('id')
@@ -401,102 +376,39 @@ const UserManagement: React.FC<UserManagementProps> = ({
 
       if (!company) throw new Error('No company found');
 
-      // Create auth user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: data.email,
-        password: data.password!,
-        options: {
-          data: {
-            first_name: data.firstName,
-            last_name: data.lastName
-          }
-        }
-      });
+      // Create verification token
+      const token = crypto.randomUUID();
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 24);
 
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('Failed to create user');
-
-      // Create user profile
-      const { data: userData, error: userError } = await supabase
-        .from('users')
+      const { error: verificationError } = await supabase
+        .from('user_verifications')
         .insert([{
-          id: authData.user.id,
-          first_name: data.firstName,
-          last_name: data.lastName,
           email: data.email,
-          role: data.role,
-          status: data.status,
-          department: data.department,
-          title: data.title,
-          location: data.location,
-          manager: data.manager,
-          start_date: data.startDate,
-          notes: data.notes,
-          company_id: company.id
-        }])
-        .select()
-        .single();
-
-      if (userError) throw userError;
-
-      // Link user to company
-      const { error: linkError } = await supabase
-        .from('user_companies')
-        .insert([{
-          user_id: authData.user.id,
-          company_id: company.id,
-          role: data.role
-        }]);
-
-      if (linkError) throw linkError;
-
-      // Create technician record if checkbox is checked
-      if (data.isTechnician) {
-        const { error: techError } = await supabase
-          .from('technicians')
-          .insert([{
-            user_id: authData.user.id,
+          token,
+          expires_at: expiresAt.toISOString(),
+          user_data: {
+            first_name: data.firstName,
+            last_name: data.lastName,
+            role: data.role,
             company_id: company.id,
-            job_title: data.jobTitle,
-            certifications: data.certifications || [],
-            skills: data.skills || [],
-            hourly_rate: data.hourlyRate ? parseFloat(data.hourlyRate) : null,
-            status: 'active'
-          }]);
-
-        if (techError) throw techError;
-      }
-
-      // Create audit log for user creation
-      const { error: auditError } = await supabase
-        .from('user_audit_logs')
-        .insert([{
-          user_id: user.id,
-          action: 'CREATE_USER',
-          details: {
-            created_user_id: authData.user.id,
-            created_user_email: data.email,
-            created_user_role: data.role,
-            is_technician: data.isTechnician
-          },
-          performed_by: user.id
+            is_technician: data.isTechnician,
+            technician_data: data.isTechnician ? {
+              job_title: data.jobTitle,
+              hourly_rate: data.hourlyRate
+            } : null
+          }
         }]);
 
-      if (auditError) throw auditError;
+      if (verificationError) throw verificationError;
 
-      // Refresh users list
-      const { data: updatedUsers, error: fetchError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('company_id', company.id)
-        .order('last_name');
-
-      if (fetchError) throw fetchError;
-      setUsers(updatedUsers || []);
-
-      onCloseAddModal?.();
-      setSuccess('User added successfully');
+      setShowUserModal(false);
+      setSuccess('User invitation sent successfully');
       reset();
+
+      // In a real application, you would send an email with the verification link
+      console.log('Verification token:', token);
+
     } catch (err: any) {
       console.error('Error adding user:', err);
       setError(err.message);
@@ -523,6 +435,17 @@ const UserManagement: React.FC<UserManagementProps> = ({
           </p>
         </div>
       )}
+
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Users</h1>
+        <button
+          onClick={() => setShowUserModal(true)}
+          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
+        >
+          <Plus className="h-5 w-5 mr-2" />
+          Add User
+        </button>
+      </div>
 
       {error && (
         <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
@@ -645,10 +568,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
                           <Edit2 className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => {
-                            setSelectedUser(user);
-                            setShowDeleteModal(true);
-                          }}
+                          onClick={() => handleDisableUser(user.id)}
                           className="text-red-600 hover:text-red-900"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -663,6 +583,146 @@ const UserManagement: React.FC<UserManagementProps> = ({
         </div>
       </div>
 
+      {/* Add User Modal */}
+      {showUserModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"></div>
+            <div className="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
+              <div className="sm:flex sm:items-start">
+                <div className="mt-3 text-center sm:mt-0 sm:text-left w-full">
+                  <h3 className="text-lg leading-6 font-medium text-gray-900">
+                    Add New User
+                  </h3>
+                  <div className="mt-2">
+                    <form onSubmit={handleSubmit(handleAddUser)} className="space-y-4">
+                      <div>
+                        <label htmlFor="firstName" className="block text-sm font-medium text-gray-700">
+                          First Name
+                        </label>
+                        <input
+                          type="text"
+                          {...register('firstName')}
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        />
+                        {errors.firstName && (
+                          <p className="mt-1 text-sm text-red-600">{errors.firstName.message}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label htmlFor="lastName" className="block text-sm font-medium text-gray-700">
+                          Last Name
+                        </label>
+                        <input
+                          type="text"
+                          {...register('lastName')}
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        />
+                        {errors.lastName && (
+                          <p className="mt-1 text-sm text-red-600">{errors.lastName.message}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+                          Email
+                        </label>
+                        <input
+                          type="email"
+                          {...register('email')}
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        />
+                        {errors.email && (
+                          <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label htmlFor="role" className="block text-sm font-medium text-gray-700">
+                          Role
+                        </label>
+                        <select
+                          {...register('role')}
+                          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        >
+                          {ROLES.map(role => (
+                            <option key={role.id} value={role.id}>
+                              {role.name}
+                            </option>
+                          ))}
+                        </select>
+                        {errors.role && (
+                          <p className="mt-1 text-sm text-red-600">{errors.role.message}</p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          {...register('isTechnician')}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor="isTechnician" className="ml-2 block text-sm text-gray-900">
+                          Register as Technician
+                        </label>
+                      </div>
+
+                      {isTechnician && (
+                        <div className="space-y-4 border-t border-gray-200 pt-4 mt-4">
+                          <div>
+                            <label htmlFor="jobTitle" className="block text-sm font-medium text-gray-700">
+                              Job Title
+                            </label>
+                            <input
+                              type="text"
+                              {...register('jobTitle')}
+                              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label htmlFor="hourlyRate" className="block text-sm font-medium text-gray-700">
+                              Hourly Rate
+                            </label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              {...register('hourlyRate')}
+                              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+                        <button
+                          type="submit"
+                          className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
+                        >
+                          Add User
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowUserModal(false);
+                            reset();
+                            onCloseAddModal?.();
+                          }}
+                          className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:w-auto sm:text-sm"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Edit User Modal */}
       {showEditModal && selectedUser && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -671,7 +731,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
             <div className="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
               <div className="sm:flex sm:items-start">
                 <div className="mt-3 text-center sm:mt-0 sm:text-left w-full">
-                  <h3 className="text-lg leading-6 font-medium text-gray-900">
+                  <h3 className="text-lg leading-6  font-medium text-gray-900">
                     Edit User
                   </h3>
                   <div className="mt-2">
@@ -834,51 +894,6 @@ const UserManagement: React.FC<UserManagementProps> = ({
                     </form>
                   </div>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && selectedUser && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"></div>
-            <div className="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
-              <div className="sm:flex sm:items-start">
-                <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
-                  <AlertCircle className="h-6 w-6 text-red-600" />
-                </div>
-                <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
-                  <h3 className="text-lg leading-6 font-medium text-gray-900">
-                    Delete User
-                  </h3>
-                  <div className="mt-2">
-                    <p className="text-sm text-gray-500">
-                      Are you sure you want to delete {selectedUser.first_name} {selectedUser.last_name}? This action cannot be undone.
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
-                <button
-                  type="button"
-                  onClick={handleDeleteUser}
-                  className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm"
-                >
-                  Delete
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowDeleteModal(false);
-                    setSelectedUser(null);
-                  }}
-                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:w-auto sm:text-sm"
-                >
-                  Cancel
-                </button>
               </div>
             </div>
           </div>

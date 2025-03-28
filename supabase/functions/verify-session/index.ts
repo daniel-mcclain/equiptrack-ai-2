@@ -13,8 +13,11 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS'
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client',
+  'Access-Control-Max-Age': '86400',
+  'Access-Control-Expose-Headers': 'content-length, content-type',
+  'Vary': 'Origin'
 };
 
 const logger = {
@@ -97,7 +100,7 @@ async function updateCompanySubscription(
         cancel_at_period_end: subscriptionData.cancel_at_period_end,
         is_trial: subscriptionData.is_trial,
         trial_ends_at: subscriptionData.trial_ends_at,
-        max_vehicles: maxVehicles, // Update the vehicle limit based on the new tier
+        max_vehicles: maxVehicles,
         updated_at: new Date().toISOString()
       })
       .eq('id', companyId);
@@ -112,7 +115,7 @@ async function updateCompanySubscription(
         event_type: 'subscription_updated',
         event_data: {
           ...subscriptionData,
-          max_vehicles: maxVehicles // Include the new vehicle limit in the event data
+          max_vehicles: maxVehicles
         },
         created_at: new Date().toISOString()
       }]);
@@ -137,8 +140,8 @@ serve(async (req: Request) => {
   const requestId = crypto.randomUUID();
   logger.info('Received session verification request', { requestId });
 
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    logger.debug('Handling CORS preflight request', { requestId });
     return new Response(null, {
       status: 204,
       headers: corsHeaders
@@ -304,7 +307,7 @@ serve(async (req: Request) => {
     const productName = subscriptionItem.price.product as string;
     
     // Map subscription tier using lookup key, product name, or fallback
-    let subscriptionTier = SUBSCRIPTION_TIER_MAP[requestBody.subscription] || 'starter'; // Use the subscription from the request body first
+    let subscriptionTier = SUBSCRIPTION_TIER_MAP[requestBody.subscription] || 'starter';
     
     if (lookupKey && SUBSCRIPTION_TIER_MAP[lookupKey]) {
       subscriptionTier = SUBSCRIPTION_TIER_MAP[lookupKey];

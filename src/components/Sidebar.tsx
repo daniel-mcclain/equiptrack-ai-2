@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, Link, useNavigate } from 'react-router-dom';
 import { 
   Truck, 
@@ -11,14 +11,45 @@ import {
   ChevronRight, 
   LayoutDashboard,
   LogOut,
-  Package
+  Package,
+  Building2
 } from 'lucide-react';
 import { useSidebarStore } from '../store/sidebarStore';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../hooks/useAuth';
+
+interface Company {
+  id: string;
+  name: string;
+}
 
 const Sidebar = () => {
   const { isOpen, toggle } = useSidebarStore();
   const navigate = useNavigate();
+  const { isAuthenticated, isGlobalAdmin, selectedCompanyId, switchCompany } = useAuth();
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchCompanies = async () => {
+      if (!isGlobalAdmin) return;
+
+      try {
+        setLoading(true);
+        const { data, error } = await supabase.rpc('get_available_companies');
+        if (error) throw error;
+        setCompanies(data || []);
+      } catch (err) {
+        console.error('Error fetching companies:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (isAuthenticated && isGlobalAdmin) {
+      fetchCompanies();
+    }
+  }, [isAuthenticated, isGlobalAdmin]);
 
   const menuItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/app/dashboard' },
@@ -34,6 +65,14 @@ const Sidebar = () => {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate('/');
+  };
+
+  const handleCompanyChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const success = await switchCompany(e.target.value);
+    if (success) {
+      // Refresh the current page to update data
+      window.location.reload();
+    }
   };
 
   return (
@@ -76,6 +115,27 @@ const Sidebar = () => {
           </NavLink>
         ))}
       </nav>
+
+      {isGlobalAdmin && isOpen && (
+        <div className="px-4 py-3 border-t border-blue-500">
+          <div className="flex items-center space-x-2">
+            <Building2 size={16} className="text-blue-300" />
+            <select
+              value={selectedCompanyId || ''}
+              onChange={handleCompanyChange}
+              disabled={loading}
+              className="w-full bg-blue-800 text-white border border-blue-500 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-50"
+            >
+              <option value="">Select Company</option>
+              {companies.map(company => (
+                <option key={company.id} value={company.id}>
+                  {company.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
 
       <button
         onClick={handleLogout}

@@ -8,6 +8,7 @@ import {
   Settings as SettingsIcon,
   Users
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import CompanyManagement from '../components/CompanyManagement';
 import { SecurityMatrix } from '../components/settings/SecurityMatrix';
@@ -28,6 +29,7 @@ const TABS: TabDefinition[] = [
 ];
 
 const Settings = () => {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('company');
   const [permissions, setPermissions] = useState<Permission[]>(DEMO_PERMISSIONS);
   const [selectedRole, setSelectedRole] = useState<string>('admin');
@@ -58,7 +60,27 @@ const Settings = () => {
       setError(null);
 
       try {
-        console.log('Initializing settings...');
+        // Get current user
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (!user) throw new Error('No user found');
+
+        // Check if user has a company
+        const { data: company, error: companyError } = await supabase
+          .from('companies')
+          .select('id')
+          .eq('owner_id', user.id)
+          .single();
+
+        if (companyError && companyError.code !== 'PGRST116') {
+          throw companyError;
+        }
+
+        if (!company) {
+          // Redirect to company setup if no company exists
+          navigate('/setup');
+          return;
+        }
 
         // Call create_admin_user_rpc function
         const { data: adminResult, error: adminError } = await supabase.rpc('create_admin_user_rpc');
@@ -68,8 +90,6 @@ const Settings = () => {
           throw adminError;
         }
 
-        console.log('Admin creation result:', adminResult);
-
         setInitializationStatus({
           initialized: true,
           adminCreated: adminResult?.success || false,
@@ -78,37 +98,21 @@ const Settings = () => {
 
         // Fetch permissions if on security tab
         if (activeTab === 'security') {
-          console.log('Fetching security permissions...');
-
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) throw new Error('No user found');
-
-          const { data: company } = await supabase
-            .from('companies')
-            .select('id')
-            .eq('owner_id', user.id)
-            .single();
-
-          if (!company) throw new Error('No company found');
-
           const { data: permissionsData, error: permissionsError } = await supabase
-            .from('company_settings')
+            .from('role_permissions')
             .select('*')
-            .eq('company_id', company.id)
-            .eq('setting_type', 'permission')
-            .eq('is_active', true);
+            .eq('company_id', company.id);
 
           if (permissionsError) throw permissionsError;
           
           const transformedPermissions = permissionsData?.map(setting => ({
             id: setting.id,
-            role: setting.value.split(':')[0],
-            resource: setting.value.split(':')[1],
-            action: setting.value.split(':')[2],
-            description: setting.description
+            role: setting.role,
+            resource: setting.resource,
+            action: setting.action,
+            description: `Allows ${setting.role} to ${setting.action} ${setting.resource}`
           })) || [];
 
-          console.log('Fetched permissions:', transformedPermissions);
           setPermissions(transformedPermissions);
         }
       } catch (err: any) {
@@ -126,7 +130,7 @@ const Settings = () => {
     if (!isLoading) {
       initializeSettings();
     }
-  }, [activeTab, isAuthenticated, isLoading]);
+  }, [activeTab, isAuthenticated, isLoading, navigate]);
 
   const handlePermissionToggle = async (role: string, resource: string, action: string) => {
     if (!isAuthenticated) {
@@ -140,8 +144,6 @@ const Settings = () => {
     );
 
     try {
-      console.log('Toggling permission:', { role, resource, action });
-
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('No user found');
 
@@ -162,7 +164,6 @@ const Settings = () => {
         .single();
 
       if (existingPermission) {
-        console.log('Removing permission:', existingPermission.id);
         const { error } = await supabase
           .from('company_settings')
           .update({ is_active: false })
@@ -173,7 +174,6 @@ const Settings = () => {
         setPermissions(prev => prev.filter(p => p.id !== existingPermission.id));
       } else {
         if (existingSetting) {
-          console.log('Reactivating permission:', existingSetting.id);
           const { data, error } = await supabase
             .from('company_settings')
             .update({ 
@@ -194,7 +194,6 @@ const Settings = () => {
             description: `Allows ${role} to ${action} ${resource}`
           }]);
         } else {
-          console.log('Creating new permission');
           const { data, error } = await supabase
             .from('company_settings')
             .insert([{
@@ -219,8 +218,6 @@ const Settings = () => {
           }]);
         }
       }
-
-      console.log('Permission toggle successful');
     } catch (err: any) {
       console.error('Error updating permission:', err);
       setError(err.message);
@@ -228,11 +225,7 @@ const Settings = () => {
   };
 
   const handleTabChange = (tabId: string) => {
-    console.log('Changing tab to:', tabId);
     setActiveTab(tabId);
-    if (tabId === 'users') {
-      setShowAddUserModal(true);
-    }
   };
 
   const renderTabContent = () => {

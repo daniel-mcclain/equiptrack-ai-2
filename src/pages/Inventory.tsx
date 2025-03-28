@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Plus, Search, Filter, Edit2, Trash2, Package, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
+import { useInventory } from '../hooks/useInventory';
 import { PartPurchaseModal } from '../components/workorders/PartPurchaseModal';
 import { EditInventoryModal } from '../components/inventory/EditInventoryModal';
 
@@ -17,14 +18,16 @@ interface Part {
 }
 
 const Inventory = () => {
-  const { isAuthenticated } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [parts, setParts] = useState<Part[]>([]);
+  const { isAuthenticated, isLoading, selectedCompanyId } = useAuth();
+  const { parts, loading, error, companyId, refreshData } = useInventory(
+    isAuthenticated,
+    isLoading,
+    selectedCompanyId
+  );
+
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
-  const [companyId, setCompanyId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filters, setFilters] = useState({
     category: '',
@@ -32,46 +35,6 @@ const Inventory = () => {
     inStock: false,
     belowReorder: false
   });
-
-  useEffect(() => {
-    const fetchParts = async () => {
-      if (!isAuthenticated) {
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('No user found');
-
-        const { data: company } = await supabase
-          .from('companies')
-          .select('id')
-          .eq('owner_id', user.id)
-          .single();
-
-        if (!company) throw new Error('No company found');
-        setCompanyId(company.id);
-
-        const { data: partsData, error: partsError } = await supabase
-          .from('parts_inventory')
-          .select('*')
-          .eq('company_id', company.id)
-          .order('part_number');
-
-        if (partsError) throw partsError;
-        setParts(partsData || []);
-
-      } catch (err: any) {
-        console.error('Error:', err);
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchParts();
-  }, [isAuthenticated]);
 
   const handleAddPart = () => {
     if (!isAuthenticated) {
@@ -108,29 +71,10 @@ const Inventory = () => {
 
       if (deleteError) throw deleteError;
 
-      setParts(prev => prev.filter(p => p.id !== partId));
+      await refreshData();
     } catch (err: any) {
       console.error('Error deleting part:', err);
       setError(err.message);
-    }
-  };
-
-  const refreshData = async () => {
-    setLoading(true);
-    try {
-      const { data: partsData, error: partsError } = await supabase
-        .from('parts_inventory')
-        .select('*')
-        .eq('company_id', companyId)
-        .order('part_number');
-
-      if (partsError) throw partsError;
-      setParts(partsData || []);
-    } catch (err: any) {
-      console.error('Error refreshing data:', err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
     }
   };
 
