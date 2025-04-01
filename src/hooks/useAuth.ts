@@ -21,8 +21,10 @@ export const useAuth = () => {
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        console.log('Checking authentication status...');
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
+          console.log('No active session found');
           setState({
             isAuthenticated: false,
             isLoading: false,
@@ -33,6 +35,7 @@ export const useAuth = () => {
           return;
         }
 
+        console.log('Session found, fetching user details');
         // Get user details including global admin status
         const { data: userData, error: userError } = await supabase
           .from('users')
@@ -40,7 +43,16 @@ export const useAuth = () => {
           .eq('id', session.user.id)
           .single();
 
-        if (userError) throw userError;
+        if (userError) {
+          console.error('Error fetching user details:', userError);
+          throw userError;
+        }
+
+        console.log('User details fetched:', {
+          userId: session.user.id,
+          isGlobalAdmin: userData?.is_global_admin,
+          selectedCompanyId: userData?.selected_company_id
+        });
 
         setState({
           isAuthenticated: true,
@@ -64,6 +76,7 @@ export const useAuth = () => {
     checkAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth state changed:', event);
       setState(prev => ({
         ...prev,
         isAuthenticated: !!session,
@@ -72,6 +85,7 @@ export const useAuth = () => {
       }));
 
       if (session?.user) {
+        console.log('Updating user status after auth change');
         // Update global admin status when auth state changes
         supabase
           .from('users')
@@ -80,6 +94,10 @@ export const useAuth = () => {
           .single()
           .then(({ data }) => {
             if (data) {
+              console.log('Updated user status:', {
+                isGlobalAdmin: data.is_global_admin,
+                selectedCompanyId: data.selected_company_id
+              });
               setState(prev => ({
                 ...prev,
                 isGlobalAdmin: data.is_global_admin || false,
@@ -87,7 +105,9 @@ export const useAuth = () => {
               }));
             }
           })
-          .catch(console.error);
+          .catch(error => {
+            console.error('Error updating user status:', error);
+          });
       }
     });
 

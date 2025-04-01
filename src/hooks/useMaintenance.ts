@@ -21,6 +21,7 @@ export const useMaintenance = (
   const [companyId, setCompanyId] = useState<string | null>(null);
 
   const fetchData = async () => {
+    console.log('Fetching maintenance data...');
     // Clear existing data
     setTemplates([]);
     setSchedules([]);
@@ -28,6 +29,7 @@ export const useMaintenance = (
 
     // If not authenticated, use demo data
     if (!isAuthenticated) {
+      console.log('Using demo maintenance data');
       setTemplates(DEMO_MAINTENANCE_TEMPLATES);
       setSchedules(DEMO_MAINTENANCE_SCHEDULES);
       setLoading(false);
@@ -39,7 +41,10 @@ export const useMaintenance = (
       setError(null);
 
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('No user found');
+      if (!user) {
+        console.log('No user found');
+        throw new Error('No user found');
+      }
 
       // Get user's company or use selected company for global admin
       const { data: userData } = await supabase
@@ -49,8 +54,12 @@ export const useMaintenance = (
         .single();
 
       const effectiveCompanyId = selectedCompanyId || userData?.company_id;
-      if (!effectiveCompanyId) throw new Error('No company found');
+      if (!effectiveCompanyId) {
+        console.log('No company found');
+        throw new Error('No company found');
+      }
 
+      console.log('Using company ID:', effectiveCompanyId);
       setCompanyId(effectiveCompanyId);
 
       // Fetch maintenance templates
@@ -61,7 +70,12 @@ export const useMaintenance = (
         .eq('is_active', true)
         .order('name');
 
-      if (templatesError) throw templatesError;
+      if (templatesError) {
+        console.error('Error fetching templates:', templatesError);
+        throw templatesError;
+      }
+
+      console.log(`Fetched ${templatesData?.length || 0} templates`);
       setTemplates(templatesData || []);
 
       // Fetch maintenance schedules with template and vehicle info
@@ -87,7 +101,12 @@ export const useMaintenance = (
         .eq('company_id', effectiveCompanyId)
         .order('next_due');
 
-      if (schedulesError) throw schedulesError;
+      if (schedulesError) {
+        console.error('Error fetching schedules:', schedulesError);
+        throw schedulesError;
+      }
+
+      console.log(`Fetched ${schedulesData?.length || 0} schedules`);
       setSchedules(schedulesData || []);
 
     } catch (err: any) {
@@ -95,16 +114,19 @@ export const useMaintenance = (
       setError(err.message);
     } finally {
       setLoading(false);
+      console.log('Maintenance data fetch completed');
     }
   };
 
   useEffect(() => {
     if (!isLoading) {
+      console.log('Triggering maintenance data fetch');
       fetchData();
     }
   }, [isAuthenticated, isLoading, selectedCompanyId]);
 
   const addTemplate = async (data: MaintenanceTemplateFormData): Promise<MaintenanceTemplate> => {
+    console.log('Adding maintenance template:', data);
     if (!companyId) throw new Error('No company selected');
 
     const { data: template, error } = await supabase
@@ -119,9 +141,13 @@ export const useMaintenance = (
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error adding template:', error);
+      throw error;
+    }
     if (!template) throw new Error('Failed to create template');
 
+    console.log('Template added successfully:', template.id);
     setTemplates(prev => [...prev, template]);
     return template;
   };
@@ -130,6 +156,7 @@ export const useMaintenance = (
     id: string, 
     data: Partial<MaintenanceTemplateFormData>
   ): Promise<MaintenanceTemplate> => {
+    console.log('Updating maintenance template:', id, data);
     const { data: template, error } = await supabase
       .from('maintenance_templates')
       .update({
@@ -140,9 +167,13 @@ export const useMaintenance = (
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error updating template:', error);
+      throw error;
+    }
     if (!template) throw new Error('Template not found');
 
+    console.log('Template updated successfully:', template.id);
     setTemplates(prev => 
       prev.map(t => t.id === template.id ? template : t)
     );
@@ -150,17 +181,23 @@ export const useMaintenance = (
   };
 
   const deleteTemplate = async (id: string): Promise<void> => {
+    console.log('Deleting maintenance template:', id);
     const { error } = await supabase
       .from('maintenance_templates')
       .update({ is_active: false })
       .eq('id', id);
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error deleting template:', error);
+      throw error;
+    }
 
+    console.log('Template deleted successfully:', id);
     setTemplates(prev => prev.filter(t => t.id !== id));
   };
 
   const addSchedule = async (data: MaintenanceFormData): Promise<MaintenanceSchedule> => {
+    console.log('Adding maintenance schedule:', data);
     if (!companyId) throw new Error('No company selected');
 
     const { data: schedule, error } = await supabase
@@ -178,9 +215,13 @@ export const useMaintenance = (
       `)
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error adding schedule:', error);
+      throw error;
+    }
     if (!schedule) throw new Error('Failed to create schedule');
 
+    console.log('Schedule added successfully:', schedule.id);
     setSchedules(prev => [...prev, schedule]);
     return schedule;
   };
@@ -189,6 +230,7 @@ export const useMaintenance = (
     id: string, 
     data: Partial<MaintenanceFormData>
   ): Promise<MaintenanceSchedule> => {
+    console.log('Updating maintenance schedule:', id, data);
     const { data: schedule, error } = await supabase
       .from('vehicle_maintenance_schedules')
       .update({
@@ -203,9 +245,13 @@ export const useMaintenance = (
       `)
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error updating schedule:', error);
+      throw error;
+    }
     if (!schedule) throw new Error('Schedule not found');
 
+    console.log('Schedule updated successfully:', schedule.id);
     setSchedules(prev => 
       prev.map(s => s.id === schedule.id ? schedule : s)
     );
@@ -213,17 +259,23 @@ export const useMaintenance = (
   };
 
   const deleteSchedule = async (id: string): Promise<void> => {
+    console.log('Deleting maintenance schedule:', id);
     const { error } = await supabase
       .from('vehicle_maintenance_schedules')
       .delete()
       .eq('id', id);
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error deleting schedule:', error);
+      throw error;
+    }
 
+    console.log('Schedule deleted successfully:', id);
     setSchedules(prev => prev.filter(s => s.id !== id));
   };
 
   const completeSchedule = async (id: string): Promise<MaintenanceSchedule> => {
+    console.log('Completing maintenance schedule:', id);
     const schedule = schedules.find(s => s.id === id);
     if (!schedule) throw new Error('Schedule not found');
 
@@ -252,9 +304,13 @@ export const useMaintenance = (
       `)
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Error completing schedule:', error);
+      throw error;
+    }
     if (!updatedSchedule) throw new Error('Failed to update schedule');
 
+    console.log('Schedule completed successfully:', updatedSchedule.id);
     setSchedules(prev => 
       prev.map(s => s.id === updatedSchedule.id ? updatedSchedule : s)
     );

@@ -31,11 +31,13 @@ export const useInventory = (
   const [companyId, setCompanyId] = useState<string | null>(null);
 
   const fetchData = async () => {
+    console.log('Fetching inventory data...');
     // Clear existing data
     setParts([]);
     setError(null);
 
     if (!isAuthenticated) {
+      console.log('User not authenticated, skipping data fetch');
       setLoading(false);
       return;
     }
@@ -45,7 +47,10 @@ export const useInventory = (
       setError(null);
 
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('No user found');
+      if (!user) {
+        console.log('No user found');
+        throw new Error('No user found');
+      }
 
       // Get user's company or use selected company for global admin
       const { data: userData } = await supabase
@@ -55,8 +60,12 @@ export const useInventory = (
         .single();
 
       const effectiveCompanyId = selectedCompanyId || userData?.company_id;
-      if (!effectiveCompanyId) throw new Error('No company found');
+      if (!effectiveCompanyId) {
+        console.log('No company found');
+        throw new Error('No company found');
+      }
 
+      console.log('Using company ID:', effectiveCompanyId);
       setCompanyId(effectiveCompanyId);
 
       // Fetch parts inventory for the company
@@ -66,7 +75,12 @@ export const useInventory = (
         .eq('company_id', effectiveCompanyId)
         .order('part_number');
 
-      if (partsError) throw partsError;
+      if (partsError) {
+        console.error('Error fetching parts:', partsError);
+        throw partsError;
+      }
+
+      console.log(`Fetched ${partsData?.length || 0} parts`);
       setParts(partsData || []);
 
     } catch (err: any) {
@@ -74,11 +88,13 @@ export const useInventory = (
       setError(err.message);
     } finally {
       setLoading(false);
+      console.log('Inventory data fetch completed');
     }
   };
 
   useEffect(() => {
     if (!isLoading) {
+      console.log('Triggering inventory data fetch');
       fetchData();
     }
   }, [isAuthenticated, isLoading, selectedCompanyId]);
