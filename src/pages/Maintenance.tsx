@@ -1,46 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import enUS from 'date-fns/locale/en-US';
 import { Plus, AlertCircle, X, Edit2, Trash2, Check } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
-import { DEMO_VEHICLES, DEMO_MAINTENANCE_SCHEDULES, DEMO_MAINTENANCE_TEMPLATES } from '../data/demoData';
+import { useMaintenance } from '../hooks/useMaintenance';
+import type { MaintenanceTemplate, MaintenanceSchedule } from '../types/maintenance';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
-
-interface MaintenanceTemplate {
-  id: string;
-  name: string;
-  schedule_type: string;
-  description: string;
-  interval_type: string;
-  interval_value: number;
-  is_active: boolean;
-}
-
-interface VehicleMaintenanceSchedule {
-  id: string;
-  vehicle_id: string;
-  template_id: string;
-  last_completed: string | null;
-  next_due: string;
-  template: MaintenanceTemplate;
-  vehicle: Vehicle;
-}
-
-interface Vehicle {
-  id: string;
-  name: string;
-  type: string;
-}
-
-interface CalendarEvent {
-  id: string;
-  title: string;
-  start: Date;
-  end: Date;
-  resource: VehicleMaintenanceSchedule;
-}
 
 const locales = {
   'en-US': enUS,
@@ -73,17 +39,35 @@ const SCHEDULE_TYPES = [
   'Custom'
 ];
 
+interface CalendarEvent {
+  id: string;
+  title: string;
+  start: Date;
+  end: Date;
+  resource: MaintenanceSchedule;
+}
+
 const Maintenance = () => {
   const [activeTab, setActiveTab] = useState('calendar');
-  const [templates, setTemplates] = useState<MaintenanceTemplate[]>([]);
-  const [schedules, setSchedules] = useState<VehicleMaintenanceSchedule[]>([]);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [showTemplateForm, setShowTemplateForm] = useState(false);
   const [showAssignForm, setShowAssignForm] = useState(false);
-  const [selectedSchedule, setSelectedSchedule] = useState<VehicleMaintenanceSchedule | null>(null);
-  const { isAuthenticated, isLoading } = useAuth();
+  const [selectedSchedule, setSelectedSchedule] = useState<MaintenanceSchedule | null>(null);
+  const { isAuthenticated, isLoading, selectedCompanyId, isGlobalAdmin } = useAuth();
+  const { 
+    templates,
+    schedules,
+    loading,
+    error,
+    companyId,
+    addTemplate,
+    updateTemplate,
+    deleteTemplate,
+    addSchedule,
+    updateSchedule,
+    deleteSchedule,
+    completeSchedule
+  } = useMaintenance(isAuthenticated, isLoading, selectedCompanyId, isGlobalAdmin);
+
   const [templateFormData, setTemplateFormData] = useState({
     name: '',
     schedule_type: '',
@@ -91,98 +75,17 @@ const Maintenance = () => {
     interval_type: 'days',
     interval_value: 30,
   });
+
   const [assignFormData, setAssignFormData] = useState({
     vehicle_id: '',
     template_id: '',
     next_due: new Date().toISOString().split('T')[0],
   });
 
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!isAuthenticated) {
-        setTemplates(DEMO_MAINTENANCE_TEMPLATES);
-        setSchedules(DEMO_MAINTENANCE_SCHEDULES);
-        setVehicles(DEMO_VEHICLES);
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('No user found');
-
-        const { data: company } = await supabase
-          .from('companies')
-          .select('id')
-          .eq('owner_id', user.id)
-          .single();
-
-        if (!company) throw new Error('No company found');
-
-        // Fetch maintenance templates
-        const { data: templatesData, error: templatesError } = await supabase
-          .from('maintenance_templates')
-          .select('*')
-          .eq('company_id', company.id)
-          .eq('is_active', true)
-          .order('name');
-
-        if (templatesError) throw templatesError;
-        setTemplates(templatesData || []);
-
-        // Fetch maintenance schedules with template and vehicle info
-        const { data: schedulesData, error: schedulesError } = await supabase
-          .from('vehicle_maintenance_schedules')
-          .select(`
-            *,
-            template:template_id(
-              id,
-              name,
-              schedule_type,
-              description,
-              interval_type,
-              interval_value,
-              is_active
-            ),
-            vehicle:vehicle_id(
-              id,
-              name,
-              type
-            )
-          `)
-          .order('next_due');
-
-        if (schedulesError) throw schedulesError;
-        setSchedules(schedulesData || []);
-
-        // Fetch vehicles
-        const { data: vehiclesData, error: vehiclesError } = await supabase
-          .from('vehicles')
-          .select('id, name, type')
-          .eq('company_id', company.id)
-          .neq('status', 'Deleted');
-
-        if (vehiclesError) throw vehiclesError;
-        setVehicles(vehiclesData || []);
-
-      } catch (err: any) {
-        console.error('Error:', err);
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (!isLoading) {
-      fetchData();
-    }
-  }, [isAuthenticated, isLoading]);
-
   const handleEventClick = (event: CalendarEvent) => {
     setSelectedSchedule(event.resource);
     setActiveTab('schedules');
     
-    // Pre-fill the assign form with the schedule data
     setAssignFormData({
       vehicle_id: event.resource.vehicle_id,
       template_id: event.resource.template_id,
@@ -201,40 +104,11 @@ const Maintenance = () => {
   const handleTemplateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAuthenticated) {
-      setError('Please sign in to create maintenance templates');
       return;
     }
-    setLoading(true);
-    setError(null);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('No user found');
-
-      const { data: company } = await supabase
-        .from('companies')
-        .select('id')
-        .eq('owner_id', user.id)
-        .single();
-
-      if (!company) throw new Error('No company found');
-
-      const { data, error } = await supabase
-        .from('maintenance_templates')
-        .insert([
-          {
-            ...templateFormData,
-            company_id: company.id,
-            is_active: true,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          }
-        ])
-        .select();
-
-      if (error) throw error;
-
-      setTemplates(prev => [...prev, data[0]]);
+      await addTemplate(templateFormData);
       setShowTemplateForm(false);
       setTemplateFormData({
         name: '',
@@ -245,53 +119,17 @@ const Maintenance = () => {
       });
     } catch (err: any) {
       console.error('Error:', err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
     }
   };
 
   const handleAssignSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAuthenticated) {
-      setError('Please sign in to assign maintenance schedules');
       return;
     }
-    setLoading(true);
-    setError(null);
 
     try {
-      const { data, error } = await supabase
-        .from('vehicle_maintenance_schedules')
-        .insert([
-          {
-            ...assignFormData,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          }
-        ])
-        .select(`
-          *,
-          template:template_id(
-            id,
-            name,
-            schedule_type,
-            description,
-            interval_type,
-            interval_value,
-            is_active
-          ),
-          vehicle:vehicle_id(
-            id,
-            name,
-            type
-          )
-        `)
-        .single();
-
-      if (error) throw error;
-
-      setSchedules(prev => [...prev, data]);
+      await addSchedule(assignFormData);
       setShowAssignForm(false);
       setAssignFormData({
         vehicle_id: '',
@@ -300,49 +138,33 @@ const Maintenance = () => {
       });
     } catch (err: any) {
       console.error('Error:', err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
     }
   };
 
   const handleDeleteTemplate = async (id: string) => {
-    if (!isAuthenticated) {
-      setError('Please sign in to delete maintenance templates');
-      return;
-    }
+    if (!isAuthenticated) return;
     try {
-      const { error } = await supabase
-        .from('maintenance_templates')
-        .update({ is_active: false })
-        .eq('id', id);
-
-      if (error) throw error;
-
-      setTemplates(prev => prev.filter(template => template.id !== id));
+      await deleteTemplate(id);
     } catch (err: any) {
       console.error('Error:', err);
-      setError(err.message);
     }
   };
 
   const handleDeleteSchedule = async (id: string) => {
-    if (!isAuthenticated) {
-      setError('Please sign in to delete maintenance schedules');
-      return;
-    }
+    if (!isAuthenticated) return;
     try {
-      const { error } = await supabase
-        .from('vehicle_maintenance_schedules')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-
-      setSchedules(prev => prev.filter(schedule => schedule.id !== id));
+      await deleteSchedule(id);
     } catch (err: any) {
       console.error('Error:', err);
-      setError(err.message);
+    }
+  };
+
+  const handleCompleteSchedule = async (id: string) => {
+    if (!isAuthenticated) return;
+    try {
+      await completeSchedule(id);
+    } catch (err: any) {
+      console.error('Error:', err);
     }
   };
 
@@ -361,6 +183,14 @@ const Maintenance = () => {
           <p className="text-sm text-blue-800">
             👋 Welcome to the demo! You're viewing sample maintenance data. 
             <a href="/auth" className="ml-2 font-medium underline">Sign in</a> to manage maintenance schedules.
+          </p>
+        </div>
+      )}
+
+      {isGlobalAdmin && !selectedCompanyId && (
+        <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <p className="text-sm text-yellow-800">
+            Please select a company from the dropdown in the sidebar to view maintenance data.
           </p>
         </div>
       )}
@@ -536,10 +366,9 @@ const Maintenance = () => {
                       </button>
                       <button
                         type="submit"
-                        disabled={loading}
                         className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md shadow-sm hover:bg-blue-700 disabled:opacity-50"
                       >
-                        {loading ? 'Adding...' : 'Add Template'}
+                        Add Template
                       </button>
                     </div>
                   </form>
@@ -560,7 +389,7 @@ const Maintenance = () => {
                   <tbody className="divide-y divide-gray-200 bg-white">
                     {templates.map(template => (
                       <tr key={template.id}>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900 font-medium">
+                        <td className="whitespace-nowrap px-3 py-4 text-sm font-medium text-gray-900">
                           {template.name}
                         </td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
@@ -613,11 +442,7 @@ const Maintenance = () => {
                           className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                         >
                           <option value="">Select vehicle</option>
-                          {vehicles.map(vehicle => (
-                            <option key={vehicle.id} value={vehicle.id}>
-                              {vehicle.name} ({vehicle.type})
-                            </option>
-                          ))}
+                          {/* Vehicles will be populated from parent component */}
                         </select>
                       </div>
 
@@ -668,10 +493,9 @@ const Maintenance = () => {
                       </button>
                       <button
                         type="submit"
-                        disabled={loading}
                         className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md shadow-sm hover:bg-blue-700 disabled:opacity-50"
                       >
-                        {loading ? 'Assigning...' : 'Assign Schedule'}
+                        Assign Schedule
                       </button>
                     </div>
                   </form>
@@ -687,6 +511,7 @@ const Maintenance = () => {
                       <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Type</th>
                       <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Description</th>
                       <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Interval</th>
+                
                       <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Last Completed</th>
                       <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Next Due</th>
                       <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Actions</th>
@@ -695,7 +520,7 @@ const Maintenance = () => {
                   <tbody className="divide-y divide-gray-200 bg-white">
                     {schedules.map(schedule => (
                       <tr key={schedule.id}>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900 font-medium">
+                        <td className="whitespace-nowrap px-3 py-4 text-sm font-medium text-gray-900">
                           {schedule.vehicle.name}
                         </td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
@@ -721,12 +546,13 @@ const Maintenance = () => {
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                           <div className="flex items-center space-x-2">
                             <button
-                              onClick={() => {/* Handle complete */}}
+                              onClick={() => handleCompleteSchedule(schedule.id)}
                               className="text-green-600 hover:text-green-900"
                               title="Mark as completed"
                             >
                               <Check size={16} />
                             </button>
+                            
                             <button
                               onClick={() => handleDeleteSchedule(schedule.id)}
                               className="text-red-600 hover:text-red-900"

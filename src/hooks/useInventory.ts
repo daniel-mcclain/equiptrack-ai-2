@@ -31,6 +31,10 @@ export const useInventory = (
   const [companyId, setCompanyId] = useState<string | null>(null);
 
   const fetchData = async () => {
+    // Clear existing data
+    setParts([]);
+    setError(null);
+
     if (!isAuthenticated) {
       setLoading(false);
       return;

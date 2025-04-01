@@ -1,25 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Filter, Edit2, Trash2, Clock, AlertCircle, CheckCircle, XCircle, PenTool as Tool, DollarSign, Users, FileText } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { 
+  Plus, 
+  Search, 
+  Filter,
+  Edit2,
+  Trash2,
+  Ban,
+  AlertCircle,
+  Check,
+  Pause,
+  Play
+} from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { useWorkOrder } from '../hooks/useWorkOrder';
+import VehicleActionModal from '../components/VehicleActionModal';
+import clsx from 'clsx';
 
-interface WorkOrder {
-  id: string;
-  title: string;
-  type: string;
-  status: string;
-  priority: string;
-  asset_type: string;
-  asset_id: string;
-  due_date: string | null;
-  description: string | null;
-  created_at: string;
-  parts_cost: number | null;
-  labor_cost: number | null;
-  asset_details?: {
-    name: string;
-  } | null;
+interface ModalState {
+  isOpen: boolean;
+  workOrderId: string | null;
+  workOrderTitle: string;
 }
 
 const WORK_ORDER_TYPES = [
@@ -46,111 +47,79 @@ const STATUSES = [
 
 const WorkOrders = () => {
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const { isAuthenticated, isLoading, selectedCompanyId, isGlobalAdmin } = useAuth();
+  const { 
+    workOrders,
+    loading,
+    error,
+    deleteWorkOrder,
+    completeWorkOrder,
+    cancelWorkOrder,
+    holdWorkOrder,
+    resumeWorkOrder
+  } = useWorkOrder(isAuthenticated, isLoading, selectedCompanyId, isGlobalAdmin);
+
   const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState({
+  const [selectedFilters, setSelectedFilters] = useState({
     type: '',
     status: '',
     priority: ''
   });
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [selectedWorkOrder, setSelectedWorkOrder] = useState<WorkOrder | null>(null);
 
-  useEffect(() => {
-    const fetchWorkOrders = async () => {
-      if (!isAuthenticated) {
-        setLoading(false);
-        return;
-      }
+  const [deleteModal, setDeleteModal] = useState<ModalState>({
+    isOpen: false,
+    workOrderId: null,
+    workOrderTitle: ''
+  });
 
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('No user found');
-
-        const { data: company } = await supabase
-          .from('companies')
-          .select('id')
-          .eq('owner_id', user.id)
-          .single();
-
-        if (!company) throw new Error('No company found');
-
-        // First, get all work orders
-        const { data: orders, error: ordersError } = await supabase
-          .from('work_orders')
-          .select('*')
-          .eq('company_id', company.id)
-          .order('created_at', { ascending: false });
-
-        if (ordersError) throw ordersError;
-
-        // Then, for each work order, fetch the asset details based on asset_type
-        const workOrdersWithAssets = await Promise.all((orders || []).map(async (order) => {
-          let assetDetails = null;
-          
-          if (order.asset_type === 'vehicle') {
-            const { data: vehicle } = await supabase
-              .from('vehicles')
-              .select('name')
-              .eq('id', order.asset_id)
-              .single();
-            assetDetails = vehicle;
-          } else if (order.asset_type === 'equipment') {
-            const { data: equipment } = await supabase
-              .from('equipment')
-              .select('name')
-              .eq('id', order.asset_id)
-              .single();
-            assetDetails = equipment;
-          }
-
-          return {
-            ...order,
-            asset_details: assetDetails
-          };
-        }));
-
-        setWorkOrders(workOrdersWithAssets);
-
-      } catch (err: any) {
-        console.error('Error:', err);
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchWorkOrders();
-  }, [isAuthenticated]);
-
-  const handleDeleteWorkOrder = async () => {
-    if (!isAuthenticated || !selectedWorkOrder) {
-      setError('Please sign in to delete work orders');
+  const handleAddWorkOrder = () => {
+    if (!isAuthenticated) {
       return;
     }
 
-    setLoading(true);
-    setError(null);
+    if (isGlobalAdmin && !selectedCompanyId) {
+      return;
+    }
+
+    navigate('/app/workorders/add');
+  };
+
+  const handleEditWorkOrder = (id: string) => {
+    if (!isAuthenticated) return;
+    navigate(`/app/workorders/edit/${id}`);
+  };
+
+  const handleDeleteWorkOrder = async () => {
+    if (!isAuthenticated || !deleteModal.workOrderId) return;
 
     try {
-      const { error } = await supabase
-        .from('work_orders')
-        .delete()
-        .eq('id', selectedWorkOrder.id);
-
-      if (error) throw error;
-
-      setWorkOrders(prev => prev.filter(wo => wo.id !== selectedWorkOrder.id));
-      setShowDeleteModal(false);
-      setSelectedWorkOrder(null);
+      await deleteWorkOrder(deleteModal.workOrderId);
+      setDeleteModal({ isOpen: false, workOrderId: null, workOrderTitle: '' });
     } catch (err: any) {
       console.error('Error deleting work order:', err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
+    }
+  };
+
+  const handleStatusChange = async (id: string, action: 'complete' | 'cancel' | 'hold' | 'resume') => {
+    if (!isAuthenticated) return;
+
+    try {
+      switch (action) {
+        case 'complete':
+          await completeWorkOrder(id);
+          break;
+        case 'cancel':
+          await cancelWorkOrder(id);
+          break;
+        case 'hold':
+          await holdWorkOrder(id);
+          break;
+        case 'resume':
+          await resumeWorkOrder(id);
+          break;
+      }
+    } catch (err: any) {
+      console.error('Error updating work order status:', err);
     }
   };
 
@@ -164,7 +133,7 @@ const WorkOrders = () => {
     return priorityConfig?.color || 'bg-gray-100 text-gray-800';
   };
 
-  const getAssetName = (workOrder: WorkOrder) => {
+  const getAssetName = (workOrder: any) => {
     return workOrder.asset_details?.name || '-';
   };
 
@@ -187,9 +156,9 @@ const WorkOrders = () => {
       order.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       getAssetName(order).toLowerCase().includes(searchTerm.toLowerCase())
     );
-    const matchesType = !filters.type || order.type === filters.type;
-    const matchesStatus = !filters.status || order.status === filters.status;
-    const matchesPriority = !filters.priority || order.priority === filters.priority;
+    const matchesType = !selectedFilters.type || order.type === selectedFilters.type;
+    const matchesStatus = !selectedFilters.status || order.status === selectedFilters.status;
+    const matchesPriority = !selectedFilters.priority || order.priority === selectedFilters.priority;
     return matchesSearch && matchesType && matchesStatus && matchesPriority;
   });
 
@@ -212,10 +181,18 @@ const WorkOrders = () => {
         </div>
       )}
 
+      {isGlobalAdmin && !selectedCompanyId && (
+        <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <p className="text-sm text-yellow-800">
+            Please select a company from the dropdown in the sidebar to view work orders.
+          </p>
+        </div>
+      )}
+
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Work Orders</h1>
         <button
-          onClick={() => navigate('/app/workorders/add')}
+          onClick={handleAddWorkOrder}
           className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
         >
           <Plus className="h-5 w-5 mr-2" />
@@ -245,8 +222,8 @@ const WorkOrders = () => {
               </div>
 
               <select
-                value={filters.type}
-                onChange={(e) => setFilters(prev => ({ ...prev, type: e.target.value }))}
+                value={selectedFilters.type}
+                onChange={(e) => setSelectedFilters(prev => ({ ...prev, type: e.target.value }))}
                 className="border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">All Types</option>
@@ -256,8 +233,8 @@ const WorkOrders = () => {
               </select>
 
               <select
-                value={filters.status}
-                onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+                value={selectedFilters.status}
+                onChange={(e) => setSelectedFilters(prev => ({ ...prev, status: e.target.value }))}
                 className="border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">All Status</option>
@@ -267,8 +244,8 @@ const WorkOrders = () => {
               </select>
 
               <select
-                value={filters.priority}
-                onChange={(e) => setFilters(prev => ({ ...prev, priority: e.target.value }))}
+                value={selectedFilters.priority}
+                onChange={(e) => setSelectedFilters(prev => ({ ...prev, priority: e.target.value }))}
                 className="border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">All Priorities</option>
@@ -359,16 +336,55 @@ const WorkOrders = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <div className="flex items-center space-x-2">
                         <button
-                          onClick={() => navigate(`/app/workorders/edit/${order.id}`)}
+                          onClick={() => handleEditWorkOrder(order.id)}
                           className="text-blue-600 hover:text-blue-900"
                           title="Edit work order"
                         >
                           <Edit2 className="h-4 w-4" />
                         </button>
+                        {order.status !== 'completed' && (
+                          <button
+                            onClick={() => handleStatusChange(order.id, 'complete')}
+                            className="text-green-600 hover:text-green-900"
+                            title="Complete work order"
+                          >
+                            <Check className="h-4 w-4" />
+                          </button>
+                        )}
+                        {order.status === 'in_progress' && (
+                          <button
+                            onClick={() => handleStatusChange(order.id, 'hold')}
+                            className="text-yellow-600 hover:text-yellow-900"
+                            title="Put on hold"
+                          >
+                            <Pause className="h-4 w-4" />
+                          </button>
+                        )}
+                        {order.status === 'on_hold' && (
+                          <button
+                            onClick={() => handleStatusChange(order.id, 'resume')}
+                            className="text-blue-600 hover:text-blue-900"
+                            title="Resume work order"
+                          >
+                            <Play className="h-4 w-4" />
+                          </button>
+                        )}
+                        {order.status !== 'cancelled' && (
+                          <button
+                            onClick={() => handleStatusChange(order.id, 'cancel')}
+                            className="text-gray-400 hover:text-orange-600"
+                            title="Cancel work order"
+                          >
+                            <Ban className="h-4 w-4" />
+                          </button>
+                        )}
                         <button
                           onClick={() => {
-                            setSelectedWorkOrder(order);
-                            setShowDeleteModal(true);
+                            setDeleteModal({
+                              isOpen: true,
+                              workOrderId: order.id,
+                              workOrderTitle: order.title
+                            });
                           }}
                           className="text-red-600 hover:text-red-900"
                           title="Delete work order"
@@ -386,49 +402,15 @@ const WorkOrders = () => {
       </div>
 
       {/* Delete Confirmation Modal */}
-      {showDeleteModal && selectedWorkOrder && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"></div>
-            <div className="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
-              <div className="sm:flex sm:items-start">
-                <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
-                  <AlertCircle className="h-6 w-6 text-red-600" />
-                </div>
-                <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
-                  <h3 className="text-lg leading-6 font-medium text-gray-900">
-                    Delete Work Order
-                  </h3>
-                  <div className="mt-2">
-                    <p className="text-sm text-gray-500">
-                      Are you sure you want to delete the work order "{selectedWorkOrder.title}"? This action cannot be undone.
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
-                <button
-                  type="button"
-                  onClick={handleDeleteWorkOrder}
-                  className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm"
-                >
-                  Delete
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowDeleteModal(false);
-                    setSelectedWorkOrder(null);
-                  }}
-                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:w-auto sm:text-sm"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <VehicleActionModal
+        isOpen={deleteModal.isOpen}
+        onClose={() => setDeleteModal({ isOpen: false, workOrderId: null, workOrderTitle: '' })}
+        onConfirm={handleDeleteWorkOrder}
+        title="Delete Work Order"
+        message={`Are you sure you want to delete the work order "${deleteModal.workOrderTitle}"? This action cannot be undone.`}
+        confirmText="Delete"
+        confirmButtonClass="bg-red-600 hover:bg-red-700"
+      />
     </div>
   );
 };

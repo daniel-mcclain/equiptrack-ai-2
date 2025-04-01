@@ -68,9 +68,11 @@ const Sidebar = () => {
   };
 
   const handleCompanyChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    console.log("handleCompanyChange triggered with value:", e.target.value);
     const success = await switchCompany(e.target.value);
+    console.log("switchCompany result:", success);
     if (success) {
-      // Refresh the current page to update data
+      console.log("Company switch successful, reloading page");
       window.location.reload();
     }
   };

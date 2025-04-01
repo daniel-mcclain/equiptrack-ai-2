@@ -95,14 +95,24 @@ export const useAuth = () => {
   }, []);
 
   const switchCompany = async (companyId: string) => {
-    if (!state.isGlobalAdmin) return false;
+    console.log("switchCompany called with companyId:", companyId);
+    
+    if (!state.isGlobalAdmin) {
+      console.log("User is not a global admin, cannot switch company");
+      return false;
+    }
 
     try {
+      console.log("Updating selected company...");
       const { data, error } = await supabase
         .rpc('update_selected_company', { company_uuid: companyId });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Error updating selected company:", error);
+        throw error;
+      }
 
+      console.log("Selected company updated successfully");
       setState(prev => ({
         ...prev,
         selectedCompanyId: companyId

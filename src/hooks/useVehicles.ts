@@ -46,14 +46,14 @@ export const useVehicles = (
         .eq('id', user.id)
         .single();
 
-      const companyId = selectedCompanyId || userData?.company_id;
-      if (!companyId) throw new Error('No company found');
+      const effectiveCompanyId = selectedCompanyId || userData?.company_id;
+      if (!effectiveCompanyId) throw new Error('No company found');
 
       // Get company details for vehicle limit
       const { data: company } = await supabase
         .from('companies')
         .select('max_vehicles')
-        .eq('id', companyId)
+        .eq('id', effectiveCompanyId)
         .single();
 
       if (!company) throw new Error('Company not found');
@@ -63,7 +63,7 @@ export const useVehicles = (
       const { data: vehiclesData, error: vehiclesError } = await supabase
         .from('vehicles')
         .select('*')
-        .eq('company_id', companyId)
+        .eq('company_id', effectiveCompanyId)
         .neq('status', 'Deleted')
         .order('name');
 
