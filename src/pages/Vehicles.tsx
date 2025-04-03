@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Plus, 
@@ -23,15 +23,25 @@ interface ModalState {
 
 const Vehicles = () => {
   const navigate = useNavigate();
-  const { isAuthenticated, isLoading, selectedCompanyId } = useAuth();
+  const { isAuthenticated, isLoading, effectiveCompanyId, isGlobalAdmin } = useAuth();
+  
+  useEffect(() => {
+    console.log('Vehicles page - Auth state:', {
+      isAuthenticated,
+      isLoading,
+      effectiveCompanyId,
+      isGlobalAdmin
+    });
+  }, [isAuthenticated, isLoading, effectiveCompanyId, isGlobalAdmin]);
+  
   const { 
     vehicles, 
     loading, 
-    error, 
+    error: vehiclesError, 
     totalVehicles, 
     maxVehicles,
     refreshData 
-  } = useVehicles(isAuthenticated, isLoading, selectedCompanyId);
+  } = useVehicles(isAuthenticated, isLoading, effectiveCompanyId);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilters, setSelectedFilters] = useState({
@@ -40,6 +50,12 @@ const Vehicles = () => {
     tag: '',
     group: ''
   });
+  const [error, setError] = useState<string | null>(vehiclesError);
+
+  // Update local error state when vehiclesError changes
+  useEffect(() => {
+    setError(vehiclesError);
+  }, [vehiclesError]);
 
   // Modal states
   const [disableModal, setDisableModal] = useState<ModalState>({
@@ -140,6 +156,30 @@ const Vehicles = () => {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  // Show message for global admins who haven't selected a company
+  if (isGlobalAdmin && !effectiveCompanyId) {
+    return (
+      <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+        <h2 className="text-xl font-semibold text-yellow-800 mb-2">Company Selection Required</h2>
+        <p className="text-yellow-800">
+          As a global administrator, you need to select a company from the dropdown in the sidebar to view vehicles.
+        </p>
+      </div>
+    );
+  }
+
+  // Show message for regular users who don't have a company assigned
+  if (!isGlobalAdmin && !effectiveCompanyId) {
+    return (
+      <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+        <h2 className="text-xl font-semibold text-red-800 mb-2">No Company Assigned</h2>
+        <p className="text-red-800">
+          You don't have a company assigned to your account. Please contact your administrator.
+        </p>
       </div>
     );
   }
@@ -273,110 +313,118 @@ const Vehicles = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredVehicles.map((vehicle) => (
-                  <tr key={vehicle.id}>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <span className="font-medium text-gray-900">{vehicle.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                        {vehicle.type}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={clsx(
-                        "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
-                        {
-                          'bg-green-100 text-green-800': vehicle.status === 'Active',
-                          'bg-yellow-100 text-yellow-800': vehicle.status === 'Maintenance',
-                          'bg-red-100 text-red-800': vehicle.status === 'Out of Service',
-                          'bg-gray-100 text-gray-800': vehicle.status === 'Inactive'
-                        }
-                      )}>
-                        {vehicle.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div>
-                        <div className="font-medium text-gray-900">
-                          {vehicle.manufacturer} {vehicle.model}
+                {filteredVehicles.length > 0 ? (
+                  filteredVehicles.map((vehicle) => (
+                    <tr key={vehicle.id}>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <span className="font-medium text-gray-900">{vehicle.name}</span>
                         </div>
-                        <div className="text-sm text-gray-500">{vehicle.year}</div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {vehicle.license_plate || '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {vehicle.mileage.toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-1">
-                        {vehicle.groups.map(group => (
-                          <span
-                            key={group}
-                            className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                          {vehicle.type}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={clsx(
+                          "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
+                          {
+                            'bg-green-100 text-green-800': vehicle.status === 'Active',
+                            'bg-yellow-100 text-yellow-800': vehicle.status === 'Maintenance',
+                            'bg-red-100 text-red-800': vehicle.status === 'Out of Service',
+                            'bg-gray-100 text-gray-800': vehicle.status === 'Inactive'
+                          }
+                        )}>
+                          {vehicle.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div>
+                          <div className="font-medium text-gray-900">
+                            {vehicle.manufacturer} {vehicle.model}
+                          </div>
+                          <div className="text-sm text-gray-500">{vehicle.year}</div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {vehicle.license_plate || '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {vehicle.mileage.toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-wrap gap-1">
+                          {vehicle.groups.map(group => (
+                            <span
+                              key={group}
+                              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+                            >
+                              {group}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-wrap gap-1">
+                          {vehicle.tags.map(tag => (
+                            <span
+                              key={tag}
+                              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => handleEditVehicle(vehicle.id)}
+                            className="text-blue-600 hover:text-blue-900"
+                            title="Edit vehicle"
                           >
-                            {group}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-1">
-                        {vehicle.tags.map(tag => (
-                          <span
-                            key={tag}
-                            className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            onClick={() => setDisableModal({
+                              isOpen: true,
+                              vehicleId: vehicle.id,
+                              vehicleName: vehicle.name
+                            })}
+                            className={clsx(
+                              "transition-colors",
+                              vehicle.status === 'Inactive'
+                                ? "text-gray-300 cursor-not-allowed"
+                                : "text-gray-400 hover:text-orange-600"
+                            )}
+                            title={vehicle.status === 'Inactive' ? 'Vehicle is already inactive' : 'Disable vehicle'}
+                            disabled={vehicle.status === 'Inactive'}
                           >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => handleEditVehicle(vehicle.id)}
-                          className="text-blue-600 hover:text-blue-900"
-                          title="Edit vehicle"
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button
-                          onClick={() => setDisableModal({
-                            isOpen: true,
-                            vehicleId: vehicle.id,
-                            vehicleName: vehicle.name
-                          })}
-                          className={clsx(
-                            "transition-colors",
-                            vehicle.status === 'Inactive'
-                              ? "text-gray-300 cursor-not-allowed"
-                              : "text-gray-400 hover:text-orange-600"
-                          )}
-                          title={vehicle.status === 'Inactive' ? 'Vehicle is already inactive' : 'Disable vehicle'}
-                          disabled={vehicle.status === 'Inactive'}
-                        >
-                          <Ban size={16} />
-                        </button>
-                        <button
-                          onClick={() => setDeleteModal({
-                            isOpen: true,
-                            vehicleId: vehicle.id,
-                            vehicleName: vehicle.name
-                          })}
-                          className="text-gray-400 hover:text-red-600 transition-colors"
-                          title="Delete vehicle"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
+                            <Ban size={16} />
+                          </button>
+                          <button
+                            onClick={() => setDeleteModal({
+                              isOpen: true,
+                              vehicleId: vehicle.id,
+                              vehicleName: vehicle.name
+                            })}
+                            className="text-gray-400 hover:text-red-600 transition-colors"
+                            title="Delete vehicle"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={9} className="px-6 py-4 text-center text-gray-500">
+                      No vehicles found. {isAuthenticated ? 'Add a vehicle to get started.' : 'Sign in to manage your vehicles.'}
                     </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
