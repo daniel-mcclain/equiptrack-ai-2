@@ -23,16 +23,16 @@ interface ModalState {
 
 const Vehicles = () => {
   const navigate = useNavigate();
-  const { isAuthenticated, isLoading, effectiveCompanyId, isGlobalAdmin } = useAuth();
+  const { isAuthenticated, isLoading, selectedCompanyId, isGlobalAdmin } = useAuth();
   
   useEffect(() => {
     console.log('Vehicles page - Auth state:', {
       isAuthenticated,
       isLoading,
-      effectiveCompanyId,
+      selectedCompanyId,
       isGlobalAdmin
     });
-  }, [isAuthenticated, isLoading, effectiveCompanyId, isGlobalAdmin]);
+  }, [isAuthenticated, isLoading, selectedCompanyId, isGlobalAdmin]);
   
   const { 
     vehicles, 
@@ -41,7 +41,7 @@ const Vehicles = () => {
     totalVehicles, 
     maxVehicles,
     refreshData 
-  } = useVehicles(isAuthenticated, isLoading, effectiveCompanyId);
+  } = useVehicles(isAuthenticated, isLoading, selectedCompanyId);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilters, setSelectedFilters] = useState({
@@ -161,7 +161,7 @@ const Vehicles = () => {
   }
 
   // Show message for global admins who haven't selected a company
-  if (isGlobalAdmin && !effectiveCompanyId) {
+  if (isGlobalAdmin && !selectedCompanyId) {
     return (
       <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
         <h2 className="text-xl font-semibold text-yellow-800 mb-2">Company Selection Required</h2>
@@ -173,7 +173,7 @@ const Vehicles = () => {
   }
 
   // Show message for regular users who don't have a company assigned
-  if (!isGlobalAdmin && !effectiveCompanyId) {
+  if (!isGlobalAdmin && !selectedCompanyId) {
     return (
       <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
         <h2 className="text-xl font-semibold text-red-800 mb-2">No Company Assigned</h2>

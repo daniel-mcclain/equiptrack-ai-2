@@ -28,9 +28,17 @@ export const useDashboard = (
     uptimeChange: 0
   });
   const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([]);
+  // Track if data has been fetched for the current company
+  const [dataFetched, setDataFetched] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
+      // If we're already fetching data for this company, don't fetch again
+      if (dataFetched === selectedCompanyId && recentActivity.length > 0) {
+        console.log('Dashboard data already fetched for this company, skipping');
+        return;
+      }
+
       if (!isAuthenticated) {
         setStats({
           totalVehicles: DEMO_STATS.totalVehicles,
@@ -48,18 +56,10 @@ export const useDashboard = (
       }
 
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-
-        // Get company ID - either selected company for global admin or user's company
-        const { data: userData } = await supabase
-          .from('users')
-          .select('company_id, is_global_admin')
-          .eq('id', user.id)
-          .single();
-
-        const companyId = selectedCompanyId || userData?.company_id;
-        if (!companyId) return;
+        if (!selectedCompanyId) {
+          setLoading(false);
+          return;
+        }
 
         // Calculate date ranges
         const now = new Date();
@@ -72,38 +72,38 @@ export const useDashboard = (
         const { count: currentTotal } = await supabase
           .from('vehicles')
           .select('*', { count: 'exact' })
-          .eq('company_id', companyId);
+          .eq('company_id', selectedCompanyId);
 
         const { count: currentActive } = await supabase
           .from('vehicles')
           .select('*', { count: 'exact' })
-          .eq('company_id', companyId)
+          .eq('company_id', selectedCompanyId)
           .eq('status', 'Active');
 
         const { count: currentMaintenance } = await supabase
           .from('vehicles')
           .select('*', { count: 'exact' })
-          .eq('company_id', companyId)
+          .eq('company_id', selectedCompanyId)
           .lt('next_maintenance', maintenanceDueDate.toISOString());
 
         // Get last month's counts
         const { count: lastMonthTotal } = await supabase
           .from('vehicles')
           .select('*', { count: 'exact' })
-          .eq('company_id', companyId)
+          .eq('company_id', selectedCompanyId)
           .lte('created_at', lastMonth.toISOString());
 
         const { count: lastMonthActive } = await supabase
           .from('vehicles')
           .select('*', { count: 'exact' })
-          .eq('company_id', companyId)
+          .eq('company_id', selectedCompanyId)
           .eq('status', 'Active')
           .lte('created_at', lastMonth.toISOString());
 
         const { count: lastMonthMaintenance } = await supabase
           .from('vehicles')
           .select('*', { count: 'exact' })
-          .eq('company_id', companyId)
+          .eq('company_id', selectedCompanyId)
           .lt('next_maintenance', lastMonth.toISOString());
 
         // Calculate percentage changes
@@ -115,12 +115,12 @@ export const useDashboard = (
         const { count: totalVehicles } = await supabase
           .from('vehicles')
           .select('*', { count: 'exact' })
-          .eq('company_id', companyId);
+          .eq('company_id', selectedCompanyId);
 
         const { count: outOfServiceVehicles } = await supabase
           .from('vehicles')
           .select('*', { count: 'exact' })
-          .eq('company_id', companyId)
+          .eq('company_id', selectedCompanyId)
           .in('status', ['Maintenance', 'Out of Service']);
 
         const currentUptime = totalVehicles ? 
@@ -131,7 +131,7 @@ export const useDashboard = (
         const { data: lastMonthUptimeData } = await supabase
           .from('technical_metrics')
           .select('metric_value')
-          .eq('company_id', companyId)
+          .eq('company_id', selectedCompanyId)
           .eq('metric_type', 'uptime')
           .eq('metric_name', 'fleet_uptime')
           .eq('component', 'fleet')
@@ -145,7 +145,7 @@ export const useDashboard = (
         await supabase
           .from('technical_metrics')
           .insert([{
-            company_id: companyId,
+            company_id: selectedCompanyId,
             metric_type: 'uptime',
             metric_name: 'fleet_uptime',
             metric_value: currentUptime,
@@ -174,11 +174,14 @@ export const useDashboard = (
             last_maintenance,
             status
           `)
-          .eq('company_id', companyId)
+          .eq('company_id', selectedCompanyId)
           .order('last_maintenance', { ascending: false })
           .limit(4);
 
         setRecentActivity(activity || []);
+        
+        // Mark data as fetched for this company
+        setDataFetched(selectedCompanyId);
 
       } catch (err: any) {
         console.error('Error:', err);
@@ -191,7 +194,26 @@ export const useDashboard = (
     if (!isLoading) {
       fetchDashboardData();
     }
-  }, [isAuthenticated, isLoading, selectedCompanyId]);
+  }, [isAuthenticated, isLoading, selectedCompanyId, dataFetched, recentActivity.length]);
+
+  // Reset dataFetched when selectedCompanyId changes
+  useEffect(() => {
+    if (selectedCompanyId !== dataFetched) {
+      console.log('Company ID changed, resetting dashboard data fetched flag');
+      setDataFetched(null);
+      setRecentActivity([]);
+      setStats({
+        totalVehicles: 0,
+        activeVehicles: 0,
+        maintenanceDue: 0,
+        uptime: 0,
+        totalVehiclesChange: 0,
+        activeVehiclesChange: 0,
+        maintenanceDueChange: 0,
+        uptimeChange: 0
+      });
+    }
+  }, [selectedCompanyId, dataFetched]);
 
   return { loading, error, stats, recentActivity };
 };

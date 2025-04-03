@@ -29,9 +29,22 @@ export const useInventory = (
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(null);
+  // Track if data has been fetched for the current company
+  const [dataFetched, setDataFetched] = useState<string | null>(null);
 
   const fetchData = async () => {
     console.log('Fetching inventory data...');
+    console.log('isAuthenticated:', isAuthenticated);
+    console.log('isLoading:', isLoading);
+    console.log('selectedCompanyId:', selectedCompanyId);
+    console.log('dataFetched:', dataFetched);
+    
+    // If we're already fetching data for this company, don't fetch again
+    if (dataFetched === selectedCompanyId && parts.length > 0) {
+      console.log('Data already fetched for this company, skipping');
+      return;
+    }
+    
     // Clear existing data
     setParts([]);
     setError(null);
@@ -46,42 +59,34 @@ export const useInventory = (
       setLoading(true);
       setError(null);
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        console.log('No user found');
-        throw new Error('No user found');
-      }
-
-      // Get user's company or use selected company for global admin
-      const { data: userData } = await supabase
-        .from('users')
-        .select('company_id, is_global_admin')
-        .eq('id', user.id)
-        .single();
-
-      const effectiveCompanyId = selectedCompanyId || userData?.company_id;
-      if (!effectiveCompanyId) {
-        console.log('No company found');
+      if (!selectedCompanyId) {
+        console.log('No company ID found, skipping data fetch');
+        setParts([]);
+        setTotalParts(0);
+        setLoading(false);
         throw new Error('No company found');
       }
 
-      console.log('Using company ID:', effectiveCompanyId);
-      setCompanyId(effectiveCompanyId);
+      console.log('Using company ID:', selectedCompanyId);
+      setCompanyId(selectedCompanyId);
 
       // Fetch parts inventory for the company
       const { data: partsData, error: partsError } = await supabase
         .from('parts_inventory')
         .select('*')
-        .eq('company_id', effectiveCompanyId)
+        .eq('company_id', selectedCompanyId)
         .order('part_number');
 
       if (partsError) {
         console.error('Error fetching parts:', partsError);
         throw partsError;
       }
-
+      
       console.log(`Fetched ${partsData?.length || 0} parts`);
       setParts(partsData || []);
+      
+      // Mark data as fetched for this company
+      setDataFetched(selectedCompanyId);
 
     } catch (err: any) {
       console.error('Error:', err);
@@ -98,6 +103,15 @@ export const useInventory = (
       fetchData();
     }
   }, [isAuthenticated, isLoading, selectedCompanyId]);
+
+  // Reset dataFetched when selectedCompanyId changes
+  useEffect(() => {
+    if (selectedCompanyId !== dataFetched) {
+      console.log('Company ID changed, resetting data fetched flag');
+      setDataFetched(null);
+      setParts([]);
+    }
+  }, [selectedCompanyId, dataFetched]);
 
   return {
     parts,

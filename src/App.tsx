@@ -8,6 +8,9 @@ import Vehicles from './pages/Vehicles';
 import AddVehicle from './pages/AddVehicle';
 import EditVehicle from './pages/EditVehicle';
 import Equipment from './pages/Equipment';
+import AddEquipment from './pages/AddEquipment';
+import EditEquipment from './pages/EditEquipment';
+import EquipmentDetails from './pages/EquipmentDetails';
 import Inventory from './pages/Inventory';
 import InventoryReport from './pages/InventoryReport';
 import Maintenance from './pages/Maintenance';
@@ -38,6 +41,9 @@ function App() {
           <Route path="vehicles/add" element={<AddVehicle />} />
           <Route path="vehicles/edit/:id" element={<EditVehicle />} />
           <Route path="equipment" element={<Equipment />} />
+          <Route path="equipment/add" element={<AddEquipment />} />
+          <Route path="equipment/edit/:id" element={<EditEquipment />} />
+          <Route path="equipment/:id" element={<EquipmentDetails />} />
           <Route path="inventory" element={<Inventory />} />
           <Route path="inventory/report" element={<InventoryReport />} />
           <Route path="maintenance" element={<Maintenance />} />

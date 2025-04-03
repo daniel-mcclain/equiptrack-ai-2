@@ -31,8 +31,7 @@ const Sidebar = () => {
     isGlobalAdmin, 
     selectedCompanyId, 
     companyId, 
-    switchCompany, 
-    effectiveCompanyId 
+    switchCompany
   } = useAuth();
   
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -219,8 +218,8 @@ const Sidebar = () => {
         ))}
       </nav>
 
-      {/* Company information section */}
-      {renderCompanyInfo()}
+      {/* Company information section - only show for global admins */}
+      {isGlobalAdmin && renderCompanyInfo()}
 
       <button
         onClick={handleLogout}

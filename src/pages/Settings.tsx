@@ -35,7 +35,7 @@ const Settings = () => {
   const [selectedRole, setSelectedRole] = useState<string>('admin');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, selectedCompanyId } = useAuth();
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [initializationStatus, setInitializationStatus] = useState<{
     initialized: boolean;
@@ -60,23 +60,8 @@ const Settings = () => {
       setError(null);
 
       try {
-        // Get current user
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        if (userError) throw userError;
-        if (!user) throw new Error('No user found');
-
         // Check if user has a company
-        const { data: company, error: companyError } = await supabase
-          .from('companies')
-          .select('id')
-          .eq('owner_id', user.id)
-          .single();
-
-        if (companyError && companyError.code !== 'PGRST116') {
-          throw companyError;
-        }
-
-        if (!company) {
+        if (!selectedCompanyId) {
           // Redirect to company setup if no company exists
           navigate('/setup');
           return;
@@ -101,7 +86,7 @@ const Settings = () => {
           const { data: permissionsData, error: permissionsError } = await supabase
             .from('role_permissions')
             .select('*')
-            .eq('company_id', company.id);
+            .eq('company_id', selectedCompanyId);
 
           if (permissionsError) throw permissionsError;
           
@@ -130,11 +115,16 @@ const Settings = () => {
     if (!isLoading) {
       initializeSettings();
     }
-  }, [activeTab, isAuthenticated, isLoading, navigate]);
+  }, [activeTab, isAuthenticated, isLoading, navigate, selectedCompanyId]);
 
   const handlePermissionToggle = async (role: string, resource: string, action: string) => {
     if (!isAuthenticated) {
       setError('Please sign in to manage permissions');
+      return;
+    }
+
+    if (!selectedCompanyId) {
+      setError('No company selected');
       return;
     }
 
@@ -144,25 +134,6 @@ const Settings = () => {
     );
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('No user found');
-
-      const { data: company } = await supabase
-        .from('companies')
-        .select('id')
-        .eq('owner_id', user.id)
-        .single();
-
-      if (!company) throw new Error('No company found');
-
-      const { data: existingSetting } = await supabase
-        .from('company_settings')
-        .select('*')
-        .eq('company_id', company.id)
-        .eq('setting_type', 'permission')
-        .eq('value', permissionKey)
-        .single();
-
       if (existingPermission) {
         const { error } = await supabase
           .from('company_settings')
@@ -173,6 +144,14 @@ const Settings = () => {
 
         setPermissions(prev => prev.filter(p => p.id !== existingPermission.id));
       } else {
+        const { data: existingSetting } = await supabase
+          .from('company_settings')
+          .select('*')
+          .eq('company_id', selectedCompanyId)
+          .eq('setting_type', 'permission')
+          .eq('value', permissionKey)
+          .single();
+
         if (existingSetting) {
           const { data, error } = await supabase
             .from('company_settings')
@@ -197,7 +176,7 @@ const Settings = () => {
           const { data, error } = await supabase
             .from('company_settings')
             .insert([{
-              company_id: company.id,
+              company_id: selectedCompanyId,
               setting_type: 'permission',
               name: `${role} ${action} ${resource}`,
               value: permissionKey,

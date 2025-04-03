@@ -4,7 +4,7 @@ import type { User, UserTableState, UserStats } from '../types/user';
 
 const PAGE_SIZE = 20;
 
-export function useUsers(tableState: UserTableState) {
+export function useUsers(tableState: UserTableState, selectedCompanyId: string | null) {
   const {
     page,
     pageSize = PAGE_SIZE,
@@ -15,11 +15,19 @@ export function useUsers(tableState: UserTableState) {
   } = tableState;
 
   return useQuery({
-    queryKey: ['users', { page, pageSize, filters, sort, search }],
+    queryKey: ['users', { page, pageSize, filters, sort, search, selectedCompanyId }],
     queryFn: async () => {
+      if (!selectedCompanyId) {
+        return {
+          users: [] as User[],
+          totalCount: 0
+        };
+      }
+
       let query = supabase
         .from('users')
-        .select('*', { count: 'exact' });
+        .select('*', { count: 'exact' })
+        .eq('company_id', selectedCompanyId);
 
       // Apply filters
       if (filters.role) {
@@ -67,24 +75,27 @@ export function useUsers(tableState: UserTableState) {
         users: data as User[],
         totalCount: count || 0
       };
-    }
+    },
+    enabled: !!selectedCompanyId
   });
 }
 
-export function useUserStats() {
+export function useUserStats(selectedCompanyId: string | null) {
   return useQuery({
-    queryKey: ['userStats'],
+    queryKey: ['userStats', selectedCompanyId],
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('No user found');
-
-      const { data: company } = await supabase
-        .from('companies')
-        .select('id')
-        .eq('owner_id', user.id)
-        .single();
-
-      if (!company) throw new Error('No company found');
+      if (!selectedCompanyId) {
+        return {
+          totalUsers: 0,
+          activeUsers: 0,
+          inactiveUsers: 0,
+          suspendedUsers: 0,
+          newUsersThisMonth: 0,
+          loginActivity: [],
+          roleDistribution: [],
+          departmentDistribution: []
+        } as UserStats;
+      }
 
       const stats: UserStats = {
         totalUsers: 0,
@@ -101,7 +112,7 @@ export function useUserStats() {
       const { data: counts, error: countsError } = await supabase
         .from('users')
         .select('status', { count: 'exact' })
-        .eq('company_id', company.id)
+        .eq('company_id', selectedCompanyId)
         .in('status', ['active', 'inactive', 'suspended']);
 
       if (countsError) throw countsError;
@@ -119,7 +130,7 @@ export function useUserStats() {
       const { count: newUsers } = await supabase
         .from('users')
         .select('*', { count: 'exact' })
-        .eq('company_id', company.id)
+        .eq('company_id', selectedCompanyId)
         .gte('created_at', startOfMonth.toISOString());
 
       stats.newUsersThisMonth = newUsers || 0;
@@ -128,7 +139,7 @@ export function useUserStats() {
       const { data: activity } = await supabase
         .from('users')
         .select('last_login')
-        .eq('company_id', company.id)
+        .eq('company_id', selectedCompanyId)
         .not('last_login', 'is', null)
         .gte('last_login', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
 
@@ -149,7 +160,7 @@ export function useUserStats() {
       const { data: roles } = await supabase
         .from('users')
         .select('role')
-        .eq('company_id', company.id);
+        .eq('company_id', selectedCompanyId);
 
       if (roles) {
         const roleMap = new Map<string, number>();
@@ -167,7 +178,7 @@ export function useUserStats() {
       const { data: departments } = await supabase
         .from('users')
         .select('department')
-        .eq('company_id', company.id)
+        .eq('company_id', selectedCompanyId)
         .not('department', 'is', null);
 
       if (departments) {
@@ -185,15 +196,18 @@ export function useUserStats() {
       }
 
       return stats;
-    }
+    },
+    enabled: !!selectedCompanyId
   });
 }
 
-export function useUserMutations() {
+export function useUserMutations(selectedCompanyId: string | null) {
   const queryClient = useQueryClient();
 
   const addUser = useMutation({
     mutationFn: async (userData: UserFormData) => {
+      if (!selectedCompanyId) throw new Error('No company selected');
+
       // Create auth user
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: userData.email,
@@ -207,18 +221,6 @@ export function useUserMutations() {
       });
 
       if (authError) throw authError;
-
-      // Get company
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('No user found');
-
-      const { data: company } = await supabase
-        .from('companies')
-        .select('id')
-        .eq('owner_id', user.id)
-        .single();
-
-      if (!company) throw new Error('No company found');
 
       // Create user profile
       const { data, error: userError } = await supabase
@@ -236,12 +238,24 @@ export function useUserMutations() {
           manager: userData.manager,
           start_date: userData.startDate,
           notes: userData.notes,
-          company_id: company.id
+          company_id: selectedCompanyId,
+          selected_company_id: selectedCompanyId // Set selected company to match company
         }])
         .select()
         .single();
 
       if (userError) throw userError;
+
+      // Create user_companies association
+      const { error: associationError } = await supabase
+        .from('user_companies')
+        .insert([{
+          user_id: authData.user!.id,
+          company_id: selectedCompanyId,
+          role: userData.role
+        }]);
+
+      if (associationError) throw associationError;
 
       return data;
     },
@@ -253,6 +267,18 @@ export function useUserMutations() {
 
   const updateUser = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<UserFormData> }) => {
+      // Verify the user belongs to the current company
+      const { data: existingUser, error: fetchError } = await supabase
+        .from('users')
+        .select('company_id')
+        .eq('id', id)
+        .single();
+        
+      if (fetchError) throw fetchError;
+      if (!existingUser) throw new Error('User not found');
+      if (existingUser.company_id !== selectedCompanyId) 
+        throw new Error('Unauthorized: User belongs to a different company');
+
       const { error } = await supabase
         .from('users')
         .update({
@@ -280,6 +306,18 @@ export function useUserMutations() {
 
   const deleteUser = useMutation({
     mutationFn: async (id: string) => {
+      // Verify the user belongs to the current company
+      const { data: existingUser, error: fetchError } = await supabase
+        .from('users')
+        .select('company_id')
+        .eq('id', id)
+        .single();
+        
+      if (fetchError) throw fetchError;
+      if (!existingUser) throw new Error('User not found');
+      if (existingUser.company_id !== selectedCompanyId) 
+        throw new Error('Unauthorized: User belongs to a different company');
+
       const { error } = await supabase
         .from('users')
         .update({ status: 'deleted' })
@@ -295,6 +333,20 @@ export function useUserMutations() {
 
   const bulkUpdateUsers = useMutation({
     mutationFn: async ({ ids, data }: { ids: string[]; data: Partial<UserFormData> }) => {
+      // Verify all users belong to the current company
+      const { data: existingUsers, error: fetchError } = await supabase
+        .from('users')
+        .select('id, company_id')
+        .in('id', ids);
+        
+      if (fetchError) throw fetchError;
+      
+      // Check if any user belongs to a different company
+      const unauthorizedUsers = existingUsers?.filter(user => user.company_id !== selectedCompanyId);
+      if (unauthorizedUsers && unauthorizedUsers.length > 0) {
+        throw new Error('Unauthorized: Some users belong to a different company');
+      }
+
       const { error } = await supabase
         .from('users')
         .update(data)

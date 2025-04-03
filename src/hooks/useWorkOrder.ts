@@ -5,15 +5,29 @@ import type { WorkOrder, WorkOrderFormData, WorkOrderState } from '../types/work
 export const useWorkOrder = (
   isAuthenticated: boolean,
   isLoading: boolean,
-  selectedCompanyId: string | null
+  selectedCompanyId: string | null,
+  isGlobalAdmin: boolean = false
 ): WorkOrderState => {
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [companyId, setCompanyId] = useState<string | null>(null);
+  // Track if data has been fetched for the current company
+  const [dataFetched, setDataFetched] = useState<string | null>(null);
 
   const fetchData = async () => {
     console.log('Fetching work orders data...');
+    console.log('isAuthenticated:', isAuthenticated);
+    console.log('isLoading:', isLoading);
+    console.log('selectedCompanyId:', selectedCompanyId);
+    console.log('dataFetched:', dataFetched);
+    
+    // If we're already fetching data for this company, don't fetch again
+    if (dataFetched === selectedCompanyId && workOrders.length > 0) {
+      console.log('Data already fetched for this company, skipping');
+      return;
+    }
+    
     // Clear existing data
     setWorkOrders([]);
     setError(null);
@@ -29,70 +43,70 @@ export const useWorkOrder = (
       setLoading(true);
       setError(null);
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        console.log('No user found');
-        throw new Error('No user found');
+      // For global admins without a selected company, just set loading to false
+      if (isGlobalAdmin && !selectedCompanyId) {
+        console.log('Global admin without company selected');
+        setLoading(false);
+        return;
       }
 
-      // Get user's company or use selected company for global admin
-      const { data: userData } = await supabase
-        .from('users')
-        .select('company_id, is_global_admin')
-        .eq('id', user.id)
-        .single();
-
-      const effectiveCompanyId = selectedCompanyId || userData?.company_id;
-      if (!effectiveCompanyId) {
-        console.log('No company found');
-        throw new Error('No company found');
+      // For regular users without a company, show an error
+      if (!selectedCompanyId && !isGlobalAdmin) {
+        console.log('No company found for regular user');
+        setLoading(false);
+        throw new Error('No company assigned. Please contact your administrator.');
       }
 
-      console.log('Using company ID:', effectiveCompanyId);
-      setCompanyId(effectiveCompanyId);
+      if (selectedCompanyId) {
+        console.log('Using company ID:', selectedCompanyId);
+        setCompanyId(selectedCompanyId);
 
-      // Fetch work orders with asset details
-      const { data: orders, error: ordersError } = await supabase
-        .from('work_orders')
-        .select('*')
-        .eq('company_id', effectiveCompanyId)
-        .order('created_at', { ascending: false });
+        // Fetch work orders with asset details
+        const { data: orders, error: ordersError } = await supabase
+          .from('work_orders')
+          .select('*')
+          .eq('company_id', selectedCompanyId)
+          .order('created_at', { ascending: false });
 
-      if (ordersError) {
-        console.error('Error fetching work orders:', ordersError);
-        throw ordersError;
-      }
-
-      console.log(`Fetched ${orders?.length || 0} work orders`);
-
-      // Then, for each work order, fetch the asset details based on asset_type
-      const workOrdersWithAssets = await Promise.all((orders || []).map(async (order) => {
-        let assetDetails = null;
-        
-        if (order.asset_type === 'vehicle') {
-          const { data: vehicle } = await supabase
-            .from('vehicles')
-            .select('name')
-            .eq('id', order.asset_id)
-            .single();
-          assetDetails = vehicle;
-        } else if (order.asset_type === 'equipment') {
-          const { data: equipment } = await supabase
-            .from('equipment')
-            .select('name')
-            .eq('id', order.asset_id)
-            .single();
-          assetDetails = equipment;
+        if (ordersError) {
+          console.error('Error fetching work orders:', ordersError);
+          throw ordersError;
         }
 
-        return {
-          ...order,
-          asset_details: assetDetails
-        };
-      }));
+        console.log(`Fetched ${orders?.length || 0} work orders`);
 
-      console.log('Asset details fetched for all work orders');
-      setWorkOrders(workOrdersWithAssets);
+        // Then, for each work order, fetch the asset details based on asset_type
+        const workOrdersWithAssets = await Promise.all((orders || []).map(async (order) => {
+          let assetDetails = null;
+          
+          if (order.asset_type === 'vehicle') {
+            const { data: vehicle } = await supabase
+              .from('vehicles')
+              .select('name')
+              .eq('id', order.asset_id)
+              .single();
+            assetDetails = vehicle;
+          } else if (order.asset_type === 'equipment') {
+            const { data: equipment } = await supabase
+              .from('equipment')
+              .select('name')
+              .eq('id', order.asset_id)
+              .single();
+            assetDetails = equipment;
+          }
+
+          return {
+            ...order,
+            asset_details: assetDetails
+          };
+        }));
+
+        console.log('Asset details fetched for all work orders');
+        setWorkOrders(workOrdersWithAssets);
+        
+        // Mark data as fetched for this company
+        setDataFetched(selectedCompanyId);
+      }
 
     } catch (err: any) {
       console.error('Error:', err);
@@ -110,15 +124,49 @@ export const useWorkOrder = (
     }
   }, [isAuthenticated, isLoading, selectedCompanyId]);
 
+  // Reset dataFetched when selectedCompanyId changes
+  useEffect(() => {
+    if (selectedCompanyId !== dataFetched) {
+      console.log('Company ID changed, resetting data fetched flag');
+      setDataFetched(null);
+      setWorkOrders([]);
+    }
+  }, [selectedCompanyId, dataFetched]);
+
   const addWorkOrder = async (data: WorkOrderFormData): Promise<WorkOrder> => {
     console.log('Adding work order:', data);
-    if (!companyId) throw new Error('No company selected');
+    if (!selectedCompanyId) throw new Error('No company selected');
+
+    // Verify the asset belongs to the current company
+    if (data.asset_type === 'vehicle') {
+      const { data: vehicle, error: vehicleError } = await supabase
+        .from('vehicles')
+        .select('company_id')
+        .eq('id', data.asset_id)
+        .single();
+        
+      if (vehicleError) throw vehicleError;
+      if (!vehicle) throw new Error('Vehicle not found');
+      if (vehicle.company_id !== selectedCompanyId) 
+        throw new Error('Unauthorized: Vehicle belongs to a different company');
+    } else if (data.asset_type === 'equipment') {
+      const { data: equipment, error: equipmentError } = await supabase
+        .from('equipment')
+        .select('company_id')
+        .eq('id', data.asset_id)
+        .single();
+        
+      if (equipmentError) throw equipmentError;
+      if (!equipment) throw new Error('Equipment not found');
+      if (equipment.company_id !== selectedCompanyId) 
+        throw new Error('Unauthorized: Equipment belongs to a different company');
+    }
 
     const { data: workOrder, error } = await supabase
       .from('work_orders')
       .insert([{
         ...data,
-        company_id: companyId,
+        company_id: selectedCompanyId,
         status: 'pending',
         created_by: (await supabase.auth.getUser()).data.user?.id,
         created_at: new Date().toISOString(),
@@ -143,6 +191,46 @@ export const useWorkOrder = (
     data: Partial<WorkOrderFormData>
   ): Promise<WorkOrder> => {
     console.log('Updating work order:', id, data);
+    
+    // Verify the work order belongs to the current company
+    const { data: existingWorkOrder, error: fetchError } = await supabase
+      .from('work_orders')
+      .select('company_id')
+      .eq('id', id)
+      .single();
+      
+    if (fetchError) throw fetchError;
+    if (!existingWorkOrder) throw new Error('Work order not found');
+    if (existingWorkOrder.company_id !== selectedCompanyId) 
+      throw new Error('Unauthorized: Work order belongs to a different company');
+    
+    // If asset_id is being updated, verify it belongs to the current company
+    if (data.asset_id && data.asset_type) {
+      if (data.asset_type === 'vehicle') {
+        const { data: vehicle, error: vehicleError } = await supabase
+          .from('vehicles')
+          .select('company_id')
+          .eq('id', data.asset_id)
+          .single();
+          
+        if (vehicleError) throw vehicleError;
+        if (!vehicle) throw new Error('Vehicle not found');
+        if (vehicle.company_id !== selectedCompanyId) 
+          throw new Error('Unauthorized: Vehicle belongs to a different company');
+      } else if (data.asset_type === 'equipment') {
+        const { data: equipment, error: equipmentError } = await supabase
+          .from('equipment')
+          .select('company_id')
+          .eq('id', data.asset_id)
+          .single();
+          
+        if (equipmentError) throw equipmentError;
+        if (!equipment) throw new Error('Equipment not found');
+        if (equipment.company_id !== selectedCompanyId) 
+          throw new Error('Unauthorized: Equipment belongs to a different company');
+      }
+    }
+
     const { data: workOrder, error } = await supabase
       .from('work_orders')
       .update({
@@ -168,6 +256,19 @@ export const useWorkOrder = (
 
   const deleteWorkOrder = async (id: string): Promise<void> => {
     console.log('Deleting work order:', id);
+    
+    // Verify the work order belongs to the current company
+    const { data: existingWorkOrder, error: fetchError } = await supabase
+      .from('work_orders')
+      .select('company_id')
+      .eq('id', id)
+      .single();
+      
+    if (fetchError) throw fetchError;
+    if (!existingWorkOrder) throw new Error('Work order not found');
+    if (existingWorkOrder.company_id !== selectedCompanyId) 
+      throw new Error('Unauthorized: Work order belongs to a different company');
+    
     const { error } = await supabase
       .from('work_orders')
       .delete()
@@ -187,6 +288,19 @@ export const useWorkOrder = (
     status: WorkOrder['status']
   ): Promise<WorkOrder> => {
     console.log('Updating work order status:', id, status);
+    
+    // Verify the work order belongs to the current company
+    const { data: existingWorkOrder, error: fetchError } = await supabase
+      .from('work_orders')
+      .select('company_id')
+      .eq('id', id)
+      .single();
+      
+    if (fetchError) throw fetchError;
+    if (!existingWorkOrder) throw new Error('Work order not found');
+    if (existingWorkOrder.company_id !== selectedCompanyId) 
+      throw new Error('Unauthorized: Work order belongs to a different company');
+    
     const updates: Partial<WorkOrder> = {
       status,
       updated_at: new Date().toISOString()

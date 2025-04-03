@@ -27,10 +27,11 @@ export const useAuth = () => {
 
   // Function to sync selectedCompanyId with companyId for non-global admins
   const syncCompanyId = useCallback((userData: any) => {
-    console.log('Syncing company ID:', userData);
+    console.log('syncCompanyId - userData:', userData);
     
     // For non-global admins, always use their assigned company
-    if (!userData?.is_global_admin && userData?.company_id) {
+    if (userData && !userData.is_global_admin && userData.company_id) {
+      console.log('Non-global admin user with company_id:', userData.company_id);
       return {
         isGlobalAdmin: false,
         selectedCompanyId: userData.company_id, // Set selectedCompanyId to match companyId
@@ -40,6 +41,8 @@ export const useAuth = () => {
     }
     
     // For global admins, use their selected company if available
+    console.log('Global admin or missing company_id. is_global_admin:', 
+      userData?.is_global_admin, 'selected_company_id:', userData?.selected_company_id);
     return {
       isGlobalAdmin: userData?.is_global_admin || false,
       selectedCompanyId: userData?.selected_company_id || null,
@@ -81,20 +84,17 @@ export const useAuth = () => {
           throw userError;
         }
 
+        console.log('Raw user data from database:', userData);
+
         // Sync company IDs based on user type
         const userState = syncCompanyId(userData);
-        
-        // Get effective company ID for logging
-        const effectiveCompanyId = userState.isGlobalAdmin 
-          ? userState.selectedCompanyId 
-          : userState.companyId;
+        console.log('checkAuth - userState after sync:', userState);
 
         console.log('User details fetched:', {
           userId: session.user.id,
           isGlobalAdmin: userState.isGlobalAdmin,
           selectedCompanyId: userState.selectedCompanyId,
           companyId: userState.companyId,
-          effectiveCompanyId,
           userRole: userState.userRole
         });
 
@@ -131,7 +131,7 @@ export const useAuth = () => {
         ...prev,
         isAuthenticated: !!session,
         userId: session?.user?.id || null,
-        isLoading: false
+        isLoading: !!session && !userDetailsFetched // Only loading if we have a session but need to fetch details
       }));
 
       // Only fetch user details if we have a session and haven't fetched them yet
@@ -146,6 +146,7 @@ export const useAuth = () => {
           .single()
           .then(({ data }) => {
             if (data) {
+              console.log('User data after auth change:', data);
               // Sync company IDs based on user type
               const userState = syncCompanyId(data);
               
@@ -158,6 +159,7 @@ export const useAuth = () => {
               
               setState(prev => ({
                 ...prev,
+                isLoading: false,
                 ...userState
               }));
               
@@ -167,10 +169,23 @@ export const useAuth = () => {
           })
           .catch(error => {
             console.error('Error updating user status:', error);
+            setState(prev => ({
+              ...prev,
+              isLoading: false
+            }));
           });
       } else if (event === 'SIGNED_OUT') {
         // Reset user details fetched flag on sign out
         setUserDetailsFetched(false);
+        setState({
+          isAuthenticated: false,
+          isLoading: false,
+          userId: null,
+          isGlobalAdmin: false,
+          selectedCompanyId: null,
+          companyId: null,
+          userRole: null
+        });
       }
     });
 
@@ -209,28 +224,8 @@ export const useAuth = () => {
     }
   }, [state.isGlobalAdmin]);
 
-  // Helper function to get the effective company ID
-  const getEffectiveCompanyId = useCallback(() => {
-    console.log("getEffectiveCompanyId called. State:", {
-      isGlobalAdmin: state.isGlobalAdmin,
-      selectedCompanyId: state.selectedCompanyId,
-      companyId: state.companyId
-    });
-    
-    // For global admins, use the selected company ID if available
-    if (state.isGlobalAdmin) {
-      return state.selectedCompanyId;
-    }
-    
-    // For regular users, use their assigned company ID
-    return state.companyId;
-  }, [state.isGlobalAdmin, state.selectedCompanyId, state.companyId]);
-
-  const effectiveCompanyId = getEffectiveCompanyId();
-  
   return { 
     ...state,
-    switchCompany,
-    effectiveCompanyId
+    switchCompany
   };
 };

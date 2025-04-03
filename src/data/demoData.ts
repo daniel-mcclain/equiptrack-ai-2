@@ -1,4 +1,4 @@
-import { addDays, subDays, subMonths } from 'date-fns';
+import { addDays, subDays, subMonths, addMonths } from 'date-fns';
 
 export interface DemoVehicle {
   id: string;
@@ -16,6 +16,30 @@ export interface DemoVehicle {
   next_maintenance: string | null;
   groups: string[];
   tags: string[];
+}
+
+export interface DemoEquipment {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  manufacturer: string;
+  model: string;
+  serial_number: string | null;
+  purchase_date: string | null;
+  warranty_expiry: string | null;
+  location: string | null;
+  last_maintenance: string | null;
+  next_maintenance: string | null;
+  technical_specs: Record<string, any> | null;
+  operating_requirements: string[] | null;
+  safety_guidelines: string[] | null;
+  required_certifications: string[] | null;
+  notes: string | null;
+  company_id: string | null;
+  is_demo: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface DemoCompany {
@@ -238,6 +262,152 @@ export const DEMO_VEHICLES: DemoVehicle[] = [
     next_maintenance: addDays(new Date(), 2).toISOString(),
     groups: ['local_delivery'],
     tags: ['Local Delivery', 'Express']
+  }
+];
+
+export const DEMO_EQUIPMENT: DemoEquipment[] = [
+  {
+    id: 'demo-e1',
+    name: 'Forklift 101',
+    type: 'Forklift',
+    status: 'Available',
+    manufacturer: 'Toyota',
+    model: '8FGU25',
+    serial_number: 'TYT-8FGU25-12345',
+    purchase_date: subMonths(new Date(), 18).toISOString(),
+    warranty_expiry: addMonths(new Date(), 6).toISOString(),
+    location: 'Warehouse A',
+    last_maintenance: subDays(new Date(), 30).toISOString(),
+    next_maintenance: addDays(new Date(), 60).toISOString(),
+    technical_specs: {
+      capacity: '5000 lbs',
+      lift_height: '189 inches',
+      power_type: 'Propane',
+      engine: '4Y-ECS',
+      transmission: 'Automatic'
+    },
+    operating_requirements: ['Operator certification required', 'Indoor use only'],
+    safety_guidelines: ['Daily inspection required', 'No passengers allowed', 'Maximum speed 5 mph'],
+    required_certifications: ['Forklift Operator Certification'],
+    notes: 'Primary warehouse forklift, scheduled for replacement in 12 months',
+    company_id: 'demo-company',
+    is_demo: true,
+    created_at: subMonths(new Date(), 18).toISOString(),
+    updated_at: subDays(new Date(), 30).toISOString()
+  },
+  {
+    id: 'demo-e2',
+    name: 'Pallet Jack 202',
+    type: 'Pallet Jack',
+    status: 'In Use',
+    manufacturer: 'Crown',
+    model: 'PTH50',
+    serial_number: 'CRW-PTH50-67890',
+    purchase_date: subMonths(new Date(), 24).toISOString(),
+    warranty_expiry: subMonths(new Date(), 12).toISOString(),
+    location: 'Warehouse B',
+    last_maintenance: subDays(new Date(), 45).toISOString(),
+    next_maintenance: addDays(new Date(), 45).toISOString(),
+    technical_specs: {
+      capacity: '5000 lbs',
+      fork_length: '48 inches',
+      power_type: 'Manual',
+      weight: '180 lbs'
+    },
+    operating_requirements: ['Basic training required'],
+    safety_guidelines: ['Check load stability before lifting', 'Do not exceed capacity'],
+    required_certifications: null,
+    notes: 'Used primarily in shipping area',
+    company_id: 'demo-company',
+    is_demo: true,
+    created_at: subMonths(new Date(), 24).toISOString(),
+    updated_at: subDays(new Date(), 45).toISOString()
+  },
+  {
+    id: 'demo-e3',
+    name: 'Generator 303',
+    type: 'Generator',
+    status: 'Maintenance',
+    manufacturer: 'Caterpillar',
+    model: 'D125-6',
+    serial_number: 'CAT-D125-54321',
+    purchase_date: subMonths(new Date(), 36).toISOString(),
+    warranty_expiry: subMonths(new Date(), 24).toISOString(),
+    location: 'Maintenance Shop',
+    last_maintenance: subDays(new Date(), 5).toISOString(),
+    next_maintenance: addDays(new Date(), 2).toISOString(),
+    technical_specs: {
+      power_output: '125 kW',
+      voltage: '480V',
+      fuel_type: 'Diesel',
+      tank_capacity: '300 gallons',
+      runtime: '24 hours at full load'
+    },
+    operating_requirements: ['Outdoor use only', 'Regular fuel checks'],
+    safety_guidelines: ['Keep clear of exhaust', 'Proper grounding required', 'No smoking near generator'],
+    required_certifications: ['Electrical Safety Training'],
+    notes: 'Backup power for main warehouse, currently undergoing maintenance for fuel system issues',
+    company_id: 'demo-company',
+    is_demo: true,
+    created_at: subMonths(new Date(), 36).toISOString(),
+    updated_at: subDays(new Date(), 5).toISOString()
+  },
+  {
+    id: 'demo-e4',
+    name: 'Scissor Lift 404',
+    type: 'Lift',
+    status: 'Available',
+    manufacturer: 'JLG',
+    model: '1930ES',
+    serial_number: 'JLG-1930ES-98765',
+    purchase_date: subMonths(new Date(), 12).toISOString(),
+    warranty_expiry: addMonths(new Date(), 12).toISOString(),
+    location: 'Warehouse A',
+    last_maintenance: subDays(new Date(), 15).toISOString(),
+    next_maintenance: addDays(new Date(), 75).toISOString(),
+    technical_specs: {
+      platform_height: '19 ft',
+      capacity: '500 lbs',
+      power_type: 'Electric',
+      weight: '2750 lbs',
+      dimensions: '30" x 72"'
+    },
+    operating_requirements: ['Indoor use only', 'Charge after each use'],
+    safety_guidelines: ['Wear harness at all times', 'Check for overhead obstructions', 'No leaning over railings'],
+    required_certifications: ['Aerial Lift Certification'],
+    notes: 'Used for inventory management and light maintenance',
+    company_id: 'demo-company',
+    is_demo: true,
+    created_at: subMonths(new Date(), 12).toISOString(),
+    updated_at: subDays(new Date(), 15).toISOString()
+  },
+  {
+    id: 'demo-e5',
+    name: 'Pressure Washer 505',
+    type: 'Cleaning Equipment',
+    status: 'Out of Service',
+    manufacturer: 'Kärcher',
+    model: 'HD 3.5/30',
+    serial_number: 'KAR-HD3530-24680',
+    purchase_date: subMonths(new Date(), 30).toISOString(),
+    warranty_expiry: subMonths(new Date(), 18).toISOString(),
+    location: 'Maintenance Shop',
+    last_maintenance: subDays(new Date(), 60).toISOString(),
+    next_maintenance: null,
+    technical_specs: {
+      pressure: '3000 PSI',
+      flow_rate: '3.5 GPM',
+      power_type: 'Electric',
+      hose_length: '50 ft'
+    },
+    operating_requirements: ['Water connection required', 'Circuit: 20A minimum'],
+    safety_guidelines: ['Wear eye protection', 'Never point at people', 'Secure work area'],
+    required_certifications: null,
+    notes: 'Pump failure, awaiting replacement parts',
+    company_id: 'demo-company',
+    is_demo: true,
+    created_at: subMonths(new Date(), 30).toISOString(),
+    updated_at: subDays(new Date(), 3).toISOString()
   }
 ];
 

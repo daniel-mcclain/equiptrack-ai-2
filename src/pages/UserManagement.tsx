@@ -19,10 +19,12 @@ import {
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { ROLES } from '../types/settings';
+import { UserTableState } from '../types/user';
 
 interface UserManagementProps {
   showAddModal?: boolean;
   onCloseAddModal?: () => void;
+  tableState?: UserTableState;
 }
 
 const userSchema = z.object({
@@ -52,7 +54,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
   onCloseAddModal
 }) => {
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, selectedCompanyId } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -66,6 +68,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
     status: '',
     dateRange: '30'
   });
+  // Track if data has been fetched for the current company
+  const [dataFetched, setDataFetched] = useState<string | null>(null);
 
   const {
     register,
@@ -87,6 +91,12 @@ const UserManagement: React.FC<UserManagementProps> = ({
 
   useEffect(() => {
     const fetchUsers = async () => {
+      // If we're already fetching data for this company, don't fetch again
+      if (dataFetched === selectedCompanyId && users.length > 0) {
+        console.log('Users data already fetched for this company, skipping');
+        return;
+      }
+
       if (!isAuthenticated) {
         setUsers([
           {
@@ -105,35 +115,24 @@ const UserManagement: React.FC<UserManagementProps> = ({
       }
 
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('No user found');
-
-        // Check if user has a company
-        const { data: company, error: companyError } = await supabase
-          .from('companies')
-          .select('id')
-          .eq('owner_id', user.id)
-          .single();
-
-        if (companyError && companyError.code !== 'PGRST116') {
-          throw companyError;
-        }
-
-        if (!company) {
-          // Redirect to company setup if no company exists
-          navigate('/setup');
+        if (!selectedCompanyId) {
+          setUsers([]);
+          setLoading(false);
           return;
         }
 
+        // Fetch users for the current company
         const { data: usersData, error: usersError } = await supabase
           .from('users')
           .select('*')
-          .eq('company_id', company.id)
+          .eq('company_id', selectedCompanyId)
           .order('last_name');
 
         if (usersError) throw usersError;
         setUsers(usersData || []);
-
+        
+        // Mark data as fetched for this company
+        setDataFetched(selectedCompanyId);
       } catch (err: any) {
         console.error('Error:', err);
         setError(err.message);
@@ -143,7 +142,16 @@ const UserManagement: React.FC<UserManagementProps> = ({
     };
 
     fetchUsers();
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, selectedCompanyId, dataFetched, users.length]);
+
+  // Reset dataFetched when selectedCompanyId changes
+  useEffect(() => {
+    if (selectedCompanyId !== dataFetched) {
+      console.log('Company ID changed, resetting users data fetched flag');
+      setDataFetched(null);
+      setUsers([]);
+    }
+  }, [selectedCompanyId, dataFetched]);
 
   useEffect(() => {
     setShowUserModal(showAddModal);
@@ -193,6 +201,23 @@ const UserManagement: React.FC<UserManagementProps> = ({
       return;
     }
 
+    if (!selectedCompanyId) {
+      setError('No company selected');
+      return;
+    }
+
+    // Verify the user belongs to the current company
+    const { data: existingUser, error: fetchError } = await supabase
+      .from('users')
+      .select('company_id')
+      .eq('id', userId)
+      .single();
+      
+    if (fetchError) throw fetchError;
+    if (!existingUser) throw new Error('User not found');
+    if (existingUser.company_id !== selectedCompanyId) 
+      throw new Error('Unauthorized: User belongs to a different company');
+
     setLoading(true);
     setError(null);
 
@@ -240,6 +265,17 @@ const UserManagement: React.FC<UserManagementProps> = ({
       return;
     }
 
+    if (!selectedCompanyId) {
+      setError('No company selected');
+      return;
+    }
+
+    // Verify the user belongs to the current company
+    if (selectedUser.company_id !== selectedCompanyId) {
+      setError('Unauthorized: User belongs to a different company');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -269,7 +305,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
       if (data.isTechnician) {
         const technicianData = {
           user_id: selectedUser.id,
-          company_id: selectedUser.company_id,
+          company_id: selectedCompanyId,
           job_title: data.jobTitle,
           certifications: data.certifications || [],
           skills: data.skills || [],
@@ -337,7 +373,7 @@ const UserManagement: React.FC<UserManagementProps> = ({
       const { data: updatedUsers, error: fetchError } = await supabase
         .from('users')
         .select('*')
-        .eq('company_id', selectedUser.company_id)
+        .eq('company_id', selectedCompanyId)
         .order('last_name');
 
       if (fetchError) throw fetchError;
@@ -361,21 +397,15 @@ const UserManagement: React.FC<UserManagementProps> = ({
       return;
     }
 
+    if (!selectedCompanyId) {
+      setError('No company selected');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('No user found');
-
-      const { data: company } = await supabase
-        .from('companies')
-        .select('id')
-        .eq('owner_id', user.id)
-        .single();
-
-      if (!company) throw new Error('No company found');
-
       // Create verification token
       const token = crypto.randomUUID();
       const expiresAt = new Date();
@@ -391,7 +421,8 @@ const UserManagement: React.FC<UserManagementProps> = ({
             first_name: data.firstName,
             last_name: data.lastName,
             role: data.role,
-            company_id: company.id,
+            company_id: selectedCompanyId,
+            selected_company_id: selectedCompanyId, // Set selected company to match company
             is_technician: data.isTechnician,
             technician_data: data.isTechnician ? {
               job_title: data.jobTitle,
