@@ -55,7 +55,7 @@ const LOCATIONS = [
 
 const AddEquipment = () => {
   const navigate = useNavigate();
-  const { isAuthenticated, effectiveCompanyId } = useAuth();
+  const { isAuthenticated, selectedCompanyId } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [newRequirement, setNewRequirement] = useState('');
@@ -161,8 +161,8 @@ const AddEquipment = () => {
       return;
     }
 
-    if (!effectiveCompanyId) {
-      setError('No company found');
+    if (!selectedCompanyId) {
+      setError('No company selected');
       return;
     }
 
@@ -195,7 +195,7 @@ const AddEquipment = () => {
           safety_guidelines: formData.safety_guidelines?.length ? formData.safety_guidelines : null,
           required_certifications: formData.required_certifications?.length ? formData.required_certifications : null,
           notes: formData.notes,
-          company_id: effectiveCompanyId,
+          company_id: selectedCompanyId,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         }])

@@ -6,7 +6,8 @@ import {
   Shield, 
   Key, 
   Settings as SettingsIcon,
-  Users
+  Users,
+  MapPin
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -18,11 +19,13 @@ import { useAuth } from '../hooks/useAuth';
 import { DEMO_PERMISSIONS } from '../data/demoData';
 import Profile from './Profile';
 import UserManagement from './UserManagement';
+import { LocationsManagement } from '../components/settings/LocationsManagement';
 
 const TABS: TabDefinition[] = [
   { id: 'company', name: 'Company', icon: Building2 },
   { id: 'profile', name: 'Profile', icon: User },
   { id: 'users', name: 'Users', icon: Users },
+  { id: 'locations', name: 'Locations', icon: MapPin },
   { id: 'security', name: 'Security', icon: Shield },
   { id: 'notifications', name: 'Notifications', icon: Bell },
   { id: 'api', name: 'API Keys', icon: Key }
@@ -215,6 +218,8 @@ const Settings = () => {
         return <Profile />;
       case 'users':
         return <UserManagement showAddModal={showAddUserModal} onCloseAddModal={() => setShowAddUserModal(false)} />;
+      case 'locations':
+        return <LocationsManagement />;
       case 'security':
         return (
           <SecurityMatrix
