@@ -1,3 +1,6 @@
+/**
+ * Represents a location entity in the system
+ */
 export interface Location {
   id: string;
   company_id: string;
@@ -13,6 +16,9 @@ export interface Location {
   deleted_at: string | null;
 }
 
+/**
+ * Form data for creating or updating a location
+ */
 export interface LocationFormData {
   name: string;
   address: string;
@@ -23,6 +29,9 @@ export interface LocationFormData {
   status: 'active' | 'inactive';
 }
 
+/**
+ * State for the location table component
+ */
 export interface LocationTableState {
   page: number;
   pageSize: number;
@@ -39,6 +48,9 @@ export interface LocationTableState {
   selectedLocations: string[];
 }
 
+/**
+ * Return type for the useLocations hook
+ */
 export interface UseLocationsResult {
   locations: Location[];
   loading: boolean;

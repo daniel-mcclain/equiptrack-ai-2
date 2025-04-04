@@ -2,6 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Location, LocationFormData, UseLocationsResult } from '../types/location';
 
+/**
+ * Hook for managing locations
+ * @param isAuthenticated - Whether the user is authenticated
+ * @param isLoading - Whether authentication is still loading
+ * @param selectedCompanyId - The ID of the selected company
+ * @returns Location management functions and state
+ */
 export const useLocations = (
   isAuthenticated: boolean,
   isLoading: boolean,
@@ -14,6 +21,9 @@ export const useLocations = (
   // Track if data has been fetched for the current company
   const [dataFetched, setDataFetched] = useState<string | null>(null);
 
+  /**
+   * Fetches locations data from the database
+   */
   const fetchData = useCallback(async () => {
     console.log('Fetching locations data...');
     console.log('isAuthenticated:', isAuthenticated);
@@ -95,6 +105,11 @@ export const useLocations = (
     }
   }, [selectedCompanyId, dataFetched]);
 
+  /**
+   * Adds a new location
+   * @param data - The location data to add
+   * @returns The newly created location
+   */
   const addLocation = async (data: LocationFormData): Promise<Location> => {
     if (!selectedCompanyId) {
       throw new Error('No company selected');
@@ -125,6 +140,12 @@ export const useLocations = (
     }
   };
 
+  /**
+   * Updates an existing location
+   * @param id - The ID of the location to update
+   * @param data - The updated location data
+   * @returns The updated location
+   */
   const updateLocation = async (id: string, data: Partial<LocationFormData>): Promise<Location> => {
     if (!selectedCompanyId) {
       throw new Error('No company selected');
@@ -165,6 +186,10 @@ export const useLocations = (
     }
   };
 
+  /**
+   * Deletes a location (soft delete)
+   * @param id - The ID of the location to delete
+   */
   const deleteLocation = async (id: string): Promise<void> => {
     if (!selectedCompanyId) {
       throw new Error('No company selected');
@@ -204,6 +229,11 @@ export const useLocations = (
     }
   };
 
+  /**
+   * Updates multiple locations at once
+   * @param ids - The IDs of the locations to update
+   * @param data - The data to update for all selected locations
+   */
   const bulkUpdateLocations = async (ids: string[], data: Partial<LocationFormData>): Promise<void> => {
     if (!selectedCompanyId) {
       throw new Error('No company selected');

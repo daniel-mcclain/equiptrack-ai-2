@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
+import { Location } from '../types/location';
 
 interface EquipmentFormData {
   name: string;
@@ -43,20 +44,10 @@ const EQUIPMENT_STATUSES = [
   'Inactive'
 ];
 
-const LOCATIONS = [
-  'Warehouse A',
-  'Warehouse B',
-  'Maintenance Shop',
-  'Loading Dock',
-  'Field Site',
-  'Office',
-  'Other'
-];
-
 const EditEquipment = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, selectedCompanyId } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [newRequirement, setNewRequirement] = useState('');
@@ -65,6 +56,8 @@ const EditEquipment = () => {
   const [technicalSpecs, setTechnicalSpecs] = useState<{key: string, value: string}[]>([
     { key: '', value: '' }
   ]);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [loadingLocations, setLoadingLocations] = useState(false);
   
   const [formData, setFormData] = useState<EquipmentFormData>({
     name: '',
@@ -133,6 +126,35 @@ const EditEquipment = () => {
 
     fetchEquipmentData();
   }, [id]);
+
+  // Fetch locations for the current company
+  useEffect(() => {
+    const fetchLocations = async () => {
+      if (!selectedCompanyId) return;
+      
+      try {
+        setLoadingLocations(true);
+        
+        const { data, error } = await supabase
+          .from('locations')
+          .select('*')
+          .eq('company_id', selectedCompanyId)
+          .eq('status', 'active')
+          .order('name');
+          
+        if (error) throw error;
+        
+        setLocations(data || []);
+      } catch (err: any) {
+        console.error('Error fetching locations:', err);
+        // Don't set the main error state to avoid disrupting the form
+      } finally {
+        setLoadingLocations(false);
+      }
+    };
+    
+    fetchLocations();
+  }, [selectedCompanyId]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -428,10 +450,23 @@ const EditEquipment = () => {
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                 >
                   <option value="">Select location</option>
-                  {LOCATIONS.map(location => (
-                    <option key={location} value={location}>{location}</option>
-                  ))}
+                  {loadingLocations ? (
+                    <option disabled>Loading locations...</option>
+                  ) : locations.length > 0 ? (
+                    locations.map(location => (
+                      <option key={location.id} value={location.name}>
+                        {location.name} - {location.city}, {location.state}
+                      </option>
+                    ))
+                  ) : (
+                    <option disabled>No locations available</option>
+                  )}
                 </select>
+                {locations.length === 0 && !loadingLocations && (
+                  <p className="mt-1 text-sm text-gray-500">
+                    No locations found. Add locations in Settings → Locations.
+                  </p>
+                )}
               </div>
             </div>
 

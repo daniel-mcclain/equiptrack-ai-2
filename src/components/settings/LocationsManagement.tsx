@@ -88,6 +88,9 @@ const COUNTRIES = [
   { code: 'AUS', name: 'Australia' }
 ];
 
+/**
+ * Modal component for adding or editing a location
+ */
 const LocationModal: React.FC<LocationModalProps> = ({
   isOpen,
   onClose,
@@ -110,25 +113,26 @@ const LocationModal: React.FC<LocationModalProps> = ({
     state: '',
     country: 'USA',
     postal_code: '',
-    status: 'active',
-    ...initialData
+    status: 'active'
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
+  // Only initialize the form when the modal opens or initialData changes
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !isInitialized) {
       setFormData({
-        name: '',
-        address: '',
-        city: '',
-        state: '',
-        country: 'USA',
-        postal_code: '',
-        status: 'active',
-        ...initialData
+        name: initialData.name || '',
+        address: initialData.address || '',
+        city: initialData.city || '',
+        state: initialData.state || '',
+        country: initialData.country || 'USA',
+        postal_code: initialData.postal_code || '',
+        status: initialData.status || 'active'
       });
       setError(null);
+      setIsInitialized(true);
     }
   }, [isOpen, initialData]);
 
@@ -332,6 +336,9 @@ const LocationModal: React.FC<LocationModalProps> = ({
   );
 };
 
+/**
+ * Modal component for confirming location deletions
+ */
 interface DeleteModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -423,6 +430,9 @@ const DeleteModal: React.FC<DeleteModalProps> = ({
   );
 };
 
+/**
+ * Main component for managing locations
+ */
 export const LocationsManagement: React.FC = () => {
   const { isAuthenticated, isLoading, selectedCompanyId } = useAuth();
   const { 
@@ -458,6 +468,9 @@ export const LocationsManagement: React.FC = () => {
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  /**
+   * Handles sorting when a column header is clicked
+   */
   const handleSort = (key: keyof Location) => {
     setSortConfig(prev => ({
       key,
@@ -465,16 +478,25 @@ export const LocationsManagement: React.FC = () => {
     }));
   };
 
+  /**
+   * Handles adding a new location
+   */
   const handleAddLocation = async (data: LocationFormData) => {
     await addLocation(data);
   };
 
+  /**
+   * Handles updating an existing location
+   */
   const handleUpdateLocation = async (data: LocationFormData) => {
     if (!editingLocation) return;
     await updateLocation(editingLocation.id, data);
     setEditingLocation(null);
   };
 
+  /**
+   * Handles deleting a location or multiple locations
+   */
   const handleDeleteLocation = async () => {
     if (deleteModalState.isMultiple) {
       // Bulk delete
@@ -492,18 +514,27 @@ export const LocationsManagement: React.FC = () => {
     });
   };
 
+  /**
+   * Handles changing the status of multiple locations
+   */
   const handleBulkStatusChange = async (status: 'active' | 'inactive') => {
     if (selectedLocations.length === 0) return;
     await bulkUpdateLocations(selectedLocations, { status });
     setSelectedLocations([]);
   };
 
+  /**
+   * Refreshes the locations data
+   */
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await refreshData();
     setTimeout(() => setIsRefreshing(false), 500);
   };
 
+  /**
+   * Handles selecting or deselecting all locations
+   */
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
       setSelectedLocations(filteredLocations.map(loc => loc.id));
@@ -512,6 +543,9 @@ export const LocationsManagement: React.FC = () => {
     }
   };
 
+  /**
+   * Handles selecting or deselecting a single location
+   */
   const handleSelectLocation = (id: string, checked: boolean) => {
     if (checked) {
       setSelectedLocations(prev => [...prev, id]);
@@ -520,6 +554,9 @@ export const LocationsManagement: React.FC = () => {
     }
   };
 
+  /**
+   * Exports the locations data to a CSV file
+   */
   const exportToCSV = () => {
     // Create CSV content
     const headers = ['Name', 'Address', 'City', 'State', 'Country', 'Postal Code', 'Status', 'Created Date'];
@@ -578,11 +615,17 @@ export const LocationsManagement: React.FC = () => {
       return 0;
     });
 
+  /**
+   * Gets the state name from a state code
+   */
   const getStateNameByCode = (code: string) => {
     const state = US_STATES.find(s => s.code === code);
     return state ? state.name : code;
   };
 
+  /**
+   * Gets the country name from a country code
+   */
   const getCountryNameByCode = (code: string) => {
     const country = COUNTRIES.find(c => c.code === code);
     return country ? country.name : code;
