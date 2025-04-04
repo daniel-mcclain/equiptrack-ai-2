@@ -107,13 +107,13 @@ const LocationModal: React.FC<LocationModalProps> = ({
   title
 }) => {
   const [formData, setFormData] = useState<LocationFormData>({
-    name: '',
-    address: '',
-    city: '',
-    state: '',
-    country: 'USA',
-    postal_code: '',
-    status: 'active'
+    name: initialData.name || '',
+    address: initialData.address || '',
+    city: initialData.city || '',
+    state: initialData.state || '',
+    country: initialData.country || 'USA',
+    postal_code: initialData.postal_code || '',
+    status: initialData.status || 'active'
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -559,14 +559,9 @@ export const LocationsManagement: React.FC = () => {
    */
   const exportToCSV = () => {
     // Create CSV content
-    const headers = ['Name', 'Address', 'City', 'State', 'Country', 'Postal Code', 'Status', 'Created Date'];
+    const headers = ['Name', 'Status', 'Created Date'];
     const rows = filteredLocations.map(loc => [
       loc.name,
-      loc.address,
-      loc.city,
-      loc.state,
-      loc.country,
-      loc.postal_code,
       loc.status,
       new Date(loc.created_at).toLocaleDateString()
     ]);
@@ -783,30 +778,6 @@ export const LocationsManagement: React.FC = () => {
                     <ArrowUpDown className="ml-1 h-4 w-4" />
                   </div>
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Address
-                </th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                  onClick={() => handleSort('city')}
-                >
-                  <div className="flex items-center">
-                    City
-                    <ArrowUpDown className="ml-1 h-4 w-4" />
-                  </div>
-                </th>
-                <th 
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
-                  onClick={() => handleSort('state')}
-                >
-                  <div className="flex items-center">
-                    State
-                    <ArrowUpDown className="ml-1 h-4 w-4" />
-                  </div>
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Postal Code
-                </th>
                 <th 
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer"
                   onClick={() => handleSort('status')}
@@ -848,18 +819,6 @@ export const LocationsManagement: React.FC = () => {
                         <span className="font-medium text-gray-900">{location.name}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-gray-900">{location.address}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {location.city}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {getStateNameByCode(location.state)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {location.postal_code}
-                    </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={clsx(
                         "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
@@ -900,7 +859,7 @@ export const LocationsManagement: React.FC = () => {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={9} className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
                     {loading ? 'Loading locations...' : 'No locations found'}
                   </td>
                 </tr>
